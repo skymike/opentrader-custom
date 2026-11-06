@@ -39,7 +39,8 @@ def main():
     if networks != ["opentrader-private"] or prior["HostConfig"]["PortBindings"]:
         raise ValueError("Deployment topology changed. Review it before updating.")
     image = "opentrader-custom:terminal-" + args.commit[:12]
-    base_image = prior["Image"]
+    base_image = "opentrader-custom:terminal-base-" + args.commit[:12]
+    docker("tag", prior["Image"], base_image)
     (release / "Dockerfile").write_text(
         f"FROM {base_image}\nCOPY app/ /app/app/\n"
         "COPY packages/exchanges/classic-monitor.mjs /app/packages/exchanges/classic-monitor.mjs\n"
