@@ -33,8 +33,11 @@ jobs:
           cp packages/exchanges/classic-monitor.mjs release/packages/exchanges/
           printf '%s\n' "$GITHUB_SHA" > release/COMMIT
           tar -czf terminal-release.tar.gz -C release .
+          cp scripts/deploy-terminal.py deploy-terminal.py
       - uses: actions/upload-artifact@v4
         with:
           name: classic-terminal-release
-          path: terminal-release.tar.gz
+          path: |
+            terminal-release.tar.gz
+            deploy-terminal.py
           retention-days: 14
