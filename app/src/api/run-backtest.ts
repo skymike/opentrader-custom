@@ -61,7 +61,7 @@ export async function runBacktest(strategyName: string, options: Options): Promi
     botTemplate: strategy.strategyFn,
   });
 
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     const candles: ICandlestick[] = [];
 
     const candleProvider = new CCXTCandlesProvider({
@@ -74,13 +74,9 @@ export async function runBacktest(strategyName: string, options: Options): Promi
 
     candleProvider.on("candle", (candle) => candles.push(candle));
 
-    candleProvider.on("done", async () => {
+    candleProvider.on("done", () => {
       logger.info(`Fetched ${candles.length} candlesticks`);
-      const report = await backtesting.run(candles);
-
-      resolve({
-        result: report,
-      });
+      void backtesting.run(candles).then((report) => resolve({ result: report }), reject);
     });
 
     candleProvider.emit("start");

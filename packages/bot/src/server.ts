@@ -6,6 +6,7 @@ import fastifyStatic from "@fastify/static";
 import { fastifyTRPCPlugin } from "@trpc/server/adapters/fastify";
 import { appRouter } from "@opentrader/trpc";
 import { createContext } from "./trpc.js";
+import { registerTerminal } from "./terminal.js";
 
 // Path to the current file
 const __filename = fileURLToPath(import.meta.url);
@@ -37,6 +38,8 @@ export const createServer = (params: CreateServerOptions) => {
     root: staticDir,
     prefix: "/", // optional: default '/'
   });
+
+  registerTerminal(fastify);
 
   fastify.register(fastifyTRPCPlugin, {
     prefix: "/api/trpc",

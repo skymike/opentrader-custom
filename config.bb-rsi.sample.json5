@@ -1,0 +1,7 @@
+{
+  settings: {
+    startingEquity: 10000,
+  },
+  pair: "BTC/USDT:USDT",
+  timeframe: "1h",
+}

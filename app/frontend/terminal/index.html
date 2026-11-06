@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Trading Terminal · OpenTrader</title>
+  <link rel="stylesheet" href="./terminal.css">
+  <script type="module" src="./terminal.js"></script>
+</head>
+<body>
+  <div class="shell">
+    <nav class="topbar" aria-label="Dashboard navigation">
+      <a class="brand" href="/">◈ <span>OpenTrader</span></a>
+      <div class="view-tabs"><a href="/">Original dashboard</a><a href="./index.html" aria-current="page">Agent terminal</a></div>
+      <span class="pill">CLASSIC V2</span>
+    </nav>
+    <main>
+      <header class="heading">
+        <div><p class="eyebrow">YOUR MARKET WORKSPACE</p><h1>Trading terminal<span class="dot"></span></h1><p class="muted">Two markets. Six agents. Every update in view.</p></div>
+        <div class="access"><span class="pill">Read-only account access</span><p id="freshness" class="muted">Waiting for connection</p></div>
+      </header>
+      <section class="connection" aria-label="Account connection">
+        <div><strong id="connection-title">Connect your workspace</strong><p id="status" role="status">Use your OpenTrader password to view market and account data.</p></div>
+        <form id="connect"><label class="sr-only" for="password">OpenTrader admin password</label><input id="password" type="password" placeholder="OpenTrader password" autocomplete="current-password" required><button id="connect-button">Connect</button></form>
+        <button id="disconnect" class="secondary" hidden>Disconnect</button>
+      </section>
+      <section class="metrics" aria-label="Account summary">
+        <article><p class="label">ACCOUNT EQUITY</p><strong id="equity">—</strong><small id="equity-note">Connect a Bitget read-only key</small></article>
+        <article><p class="label">AVAILABLE BALANCE</p><strong id="available">—</strong><small>USDT futures account</small></article>
+        <article><p class="label">OPEN POSITIONS</p><strong id="count">—</strong><small>Reported by Bitget</small></article>
+        <article><p class="label">UNREALIZED P&amp;L</p><strong id="pnl">—</strong><small>Across open positions</small></article>
+      </section>
+      <div class="workspace">
+        <aside><div class="section-title"><h2>Agents</h2><span>06 modules</span></div><section id="agents" class="agents"></section><div class="strategy"><h2>Strategy reference</h2><p>Bollinger 20 / 2 · RSI 14</p><p>1 hour · Completed candles</p><dl><div><dt>Risk budget</dt><dd>2%</dd></div><div><dt>Stop / target</dt><dd>2% / 4%</dd></div></dl><small>Reference settings. Execution is inactive.</small></div></aside>
+        <div class="workspace-main">
+          <article class="flow"><div class="section-title"><h2>Execution flow</h2><span>Observation mode</span></div><div class="steps"><span>01 Scan</span><i>→</i><span>02 Check</span><i>→</i><span>03 Size</span><i>→</i><span>04 Execute</span><i>→</i><span>05 Log</span><i>→</i><span>06 Equity</span></div></article>
+          <section id="markets" class="market-grid" aria-label="Market overview"></section>
+          <article class="chart"><div class="section-title"><h2>Equity over time</h2><span>Account samples · USDT</span></div><svg id="curve" hidden viewBox="0 0 600 100" role="img" aria-label="Account equity history"><polyline fill="none" stroke="currentColor" stroke-width="2"></polyline></svg><div id="chart-empty" class="empty">Your account's equity history will appear after connection.</div></article>
+          <article><div class="section-title"><h2>Open positions</h2><span>Bitget USDT futures</span></div><div class="table-wrap"><table><thead><tr><th>Market</th><th>Side</th><th>Quantity</th><th>Unrealized P&amp;L</th></tr></thead><tbody id="positions"></tbody></table></div><p id="positions-empty" class="empty">Connect a read-only Bitget key to view positions.</p></article>
+          <div class="lower-grid">
+            <article><div class="section-title"><h2>Activity log</h2><span>Connection &amp; data events</span></div><ol id="logs"></ol><p id="logs-empty" class="empty">Updates will appear here.</p></article>
+            <article class="order-flow"><p class="eyebrow">EXPLORE ORDER FLOW</p><h2>Look inside market activity</h2><p class="muted">Explore large trades, volume and liquidation feeds in aggr.trade.</p><a class="button-link" href="https://aggr.trade" target="_blank" rel="noopener noreferrer">Open aggr.trade ↗</a><small>Opens separately. Configure BTC or SOL markets there.</small></article>
+          </div>
+        </div>
+      </div>
+      <footer><span>OpenTrader · Classic V2</span><span id="footer-status">Account connection pending</span><a href="/">Return to original dashboard ↗</a></footer>
+    </main>
+  </div>
+</body>
+</html>

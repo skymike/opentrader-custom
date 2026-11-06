@@ -52,6 +52,8 @@ export class Backtesting<S = any> {
   }
 
   async run(candlesticks: ICandlestick[]): Promise<string> {
+    if (this.botTemplate.backtest) return this.botTemplate.backtest(candlesticks, this.botConfig);
+
     for (const [index, candle] of candlesticks.entries()) {
       this.marketSimulator.nextCandle(candle);
 
