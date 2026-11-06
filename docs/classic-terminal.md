@@ -48,3 +48,11 @@ the admin password in memory and clears displayed account data on disconnect.
 An external link opens aggr.trade separately. This release has no embedded
 aggr client or data ingestion. Its live trades and liquidation feeds can be
 explored independently. Historical aggr charts need an additional data source.
+
+## Administrator password
+
+Deployment saves the administrator password in the server owner's private
+text file at ~/.config/opentrader-terminal/admin-password.txt with mode 600.
+When the existing container has no password, it creates a random one. Both
+dashboard views require this password. The value is excluded from the GitHub
+release and application logs. A saved password is reused on subsequent runs.

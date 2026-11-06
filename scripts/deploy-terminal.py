@@ -4,9 +4,9 @@ import json
 import os
 from pathlib import Path
 import re
+import secrets
 import subprocess
 import tarfile
-import tempfile
 import time
 
 
@@ -56,12 +56,28 @@ def main():
     snapshot = json.loads(docker("run", "--rm", "--network", "none",
         "--mount", f"type=volume,src={volume},dst=/terminal,readonly",
         "--entrypoint", "cat", image, "/terminal/state.json"))
-    if not all(market["status"] == "connected" for market in snapshot["markets"]):
+    if len(snapshot["markets"]) != 2 or not all(market["status"] == "connected" for market in snapshot["markets"]):
         raise RuntimeError("Public market checks failed. Existing app is still running.")
     backup = original + "-rollback-" + args.commit[:12]
     if docker("ps", "-aq", "--filter", "name=^/" + monitor + "$"):
         raise RuntimeError("A monitor already exists. Review its credentials before replacing it.")
     environment = prior["Config"]["Env"]
+    configured_password = next((value.split("=", 1)[1] for value in environment
+                                if value.startswith("ADMIN_PASSWORD=")), "")
+    secret_directory = Path.home() / ".config" / "opentrader-terminal"
+    secret_directory.mkdir(parents=True, mode=0o700, exist_ok=True)
+    secret_file = secret_directory / "admin-password.txt"
+    if not secret_file.exists():
+        descriptor = os.open(secret_file, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(descriptor, "w") as handle:
+            handle.write((configured_password or secrets.token_urlsafe(32)) + "\n")
+    password = secret_file.read_text().strip()
+    if len(password) < 24 or "\n" in password:
+        raise ValueError("Review the private administrator password file")
+    if configured_password and configured_password != password:
+        raise ValueError("Saved password differs from the existing administrator password")
+    environment = [value for value in environment if not value.startswith("ADMIN_PASSWORD=")]
+    environment.append("ADMIN_PASSWORD=" + password)
     env_path = release / "app.env"
     env_path.touch(mode=0o600)
     env_path.write_text("\n".join(environment) + "\n")
@@ -107,7 +123,8 @@ def main():
     finally:
         env_path.unlink(missing_ok=True)
     print(json.dumps({"image": image, "rollbackContainer": backup, "commit": args.commit,
-                      "account": "not-connected", "monitor": monitor}))
+                      "account": "not-connected", "monitor": monitor,
+                      "passwordFile": str(secret_file)}))
 
 
 if __name__ == "__main__":
