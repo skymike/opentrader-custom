@@ -25,9 +25,10 @@ jobs:
         run: pnpm --filter opentrader exec tsup
       - name: Package release
         run: |
-          mkdir -p release/app/frontend/terminal release/packages/exchanges
+          mkdir -p release/app/frontend/terminal release/app/frontend/assets release/packages/exchanges
           cp -R app/dist release/app/
           cp app/frontend/index.html release/app/frontend/
+          cp app/frontend/assets/index-DTKnr6h1.js release/app/frontend/assets/
           cp app/frontend/terminal/* release/app/frontend/terminal/
           cp packages/exchanges/classic-monitor.mjs release/packages/exchanges/
           printf '%s\n' "$GITHUB_SHA" > release/COMMIT

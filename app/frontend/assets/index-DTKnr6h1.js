@@ -25904,7 +25904,7 @@ or(zu());
 const gA = "APP_URL",
   yB = "ADMIN_PASSWORD",
   hM = "DEVELOPER_MODE_ENABLED",
-  XD = "http://localhost:8000";
+  XD = window.location.origin;
 function Gre() {
   return localStorage.getItem(yB);
 }
