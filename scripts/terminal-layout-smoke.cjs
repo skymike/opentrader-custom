@@ -102,6 +102,7 @@ const root = path.resolve("app/frontend/terminal");
     for (const size of [
       { width: 1440, height: 900 },
       { width: 1366, height: 768 },
+      { width: 1440, height: 675 },
       { width: 1920, height: 1080 },
     ]) {
       await page.setViewportSize(size);
