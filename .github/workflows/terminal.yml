@@ -23,7 +23,8 @@ jobs:
         run: node --experimental-strip-types --test packages/bot/src/terminal.node-test.mjs packages/exchanges/classic-monitor.node-test.mjs packages/exchanges/classic-agents.node-test.mjs packages/exchanges/terminal-assistant.node-test.mjs
       - name: Build OpenTrader
         run: pnpm --filter opentrader exec tsup
-      - run: python3 -m py_compile scripts/deploy-terminal.py scripts/setup-terminal-ai.py
+      - run: python3 -m py_compile scripts/deploy-terminal.py scripts/setup-terminal-ai.py scripts/migrate-terminal-ai.py
+      - run: python3 -m unittest discover -s scripts -p 'test_migrate_terminal_ai.py'
       - name: Package release
         run: |
           mkdir -p release/app/frontend/terminal release/app/frontend/assets release/packages/exchanges
@@ -38,6 +39,7 @@ jobs:
           tar -czf terminal-release.tar.gz -C release .
           cp scripts/deploy-terminal.py deploy-terminal.py
           cp scripts/setup-terminal-ai.py setup-terminal-ai.py
+          cp scripts/migrate-terminal-ai.py migrate-terminal-ai.py
       - uses: actions/upload-artifact@v4
         with:
           name: classic-terminal-release
@@ -45,4 +47,5 @@ jobs:
             terminal-release.tar.gz
             deploy-terminal.py
             setup-terminal-ai.py
+            migrate-terminal-ai.py
           retention-days: 14

@@ -12,6 +12,8 @@ import urllib.request
 
 
 def main():
+    if subprocess.run(["systemctl", "--user", "is-active", "--quiet", "opentrader-lfm-link"], check=False).returncode == 0:
+        raise RuntimeError("Inference is hosted on proud-server; do not reinstall a competing local model")
     source = Path.home() / "ai-benchmark-20261107"
     manifest = source / "models" / "LFM2.5-1.2B-Instruct-Q4_K_M.gguf"
     expected = "b1b3de114215d9507409a662a501a631095a479a419584e8a2ded6304b19b4f5"

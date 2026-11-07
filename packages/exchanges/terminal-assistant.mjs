@@ -122,7 +122,8 @@ export function createAssistant({ readState, readSettings, write, generate, cloc
 }
 
 export async function generateLocal(instruction, facts, { fetchImpl = fetch, timeout = 12_000 } = {}) {
-  // Fixed loopback destination. No exchange client, tools, URL parameters or remote model service.
+  // Fixed loopback destination, optionally backed by the restricted SSH link to proud-server.
+  // No exchange client, trading tools or user-selectable destination.
   const response = await fetchImpl("http://127.0.0.1:18089/v1/chat/completions", {
     method: "POST", signal: AbortSignal.timeout(timeout), headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ model: "local", temperature: 0, max_tokens: 90, cache_prompt: false,
