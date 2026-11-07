@@ -26,6 +26,7 @@ const root = path.resolve("app/frontend/terminal");
   try {
     const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
     const errors = [];
+    await page.route('https://api.alternative.me/**', r => r.fulfill({ json: { data: [{ value: '27', timestamp: String(Math.floor(Date.now() / 1000)) }] } }));
     page.on("pageerror", (e) => errors.push(e.message));
     let signedIn = false;
     const settings = {
@@ -90,6 +91,7 @@ const root = path.resolve("app/frontend/terminal");
       });
     await page.goto("http://127.0.0.1:" + server.address().port + "/index.html");
     await page.waitForFunction(() => document.querySelector("#chart-price").textContent !== "—");
+    await page.waitForFunction(() => document.querySelector('#sentiment-score')?.textContent === '27');
     await page.locator("#password").fill("fixture-password");
     await page.locator("#connect-button").click();
     await page.waitForFunction(() => !document.getElementById("trading-fields").disabled);
@@ -120,6 +122,12 @@ const root = path.resolve("app/frontend/terminal");
       for (const id of ["trading-panel", "trade-proposals-empty", "trade-orders-empty", "price-chart"]) {
         assert.equal(await page.locator("#" + id).isVisible(), true, id + " visible");
       }
+      assert.equal(await page.evaluate(() => {
+        const ai = document.querySelector('.terminal-ai').getBoundingClientRect();
+        const sentiment = document.querySelector('.sentiment-panel').getBoundingClientRect();
+        const chart = document.querySelector('.market-terminal').getBoundingClientRect();
+        return ai.right <= chart.left && sentiment.top >= ai.bottom && sentiment.bottom <= innerHeight && chart.width >= 480;
+      }), true, 'AI left of chart and sentiment below, within viewport');
     }
     await page.setViewportSize({ width: 1366, height: 768 });
     await page.evaluate(() => {

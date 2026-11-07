@@ -1,3 +1,4 @@
+import { mountSentiment } from './sentiment.js';
 // Rearrange existing controls without replacing their IDs or execution handlers.
 const el = (id) => document.getElementById(id);
 const main = document.querySelector("main");
@@ -149,7 +150,12 @@ activity.remove();
 const approvalPanel = create("article", "approval-panel");
 approvalPanel.append(approvals);
 sidebar.append(trading, approvalPanel, agentPanel);
-layout.append(market, sidebar, bottom, ai);
+const insights = create('aside', 'terminal-insights');
+insights.setAttribute('aria-label', 'Market insights');
+const sentiment = create('article', 'sentiment-panel');
+mountSentiment(sentiment);
+insights.append(ai, sentiment);
+layout.append(insights, market, sidebar, bottom);
 const connection = document.querySelector(".connection");
 const statusstrip = create("div", "workspace-status");
 statusstrip.append(connection, el("open-key-health"));
