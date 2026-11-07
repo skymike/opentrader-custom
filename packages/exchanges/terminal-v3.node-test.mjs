@@ -39,6 +39,9 @@ test('Unified routes normalize account, positions, order state and protected sub
   const body = JSON.parse(calls.at(-1).body);
   assert.equal(body.qty, '0.001'); assert.equal(body.timeInForce, 'ioc'); assert.equal(body.stopLoss, '98000');
   await client.close(entry, .001); assert.equal(JSON.parse(calls.at(-1).body).reduceOnly, 'yes');
+  data['account/assets'] = { usdtEquity: '0', assets: [] };
+  data['position/current-position'] = { list: null };
+  assert.equal((await client.context('BTCUSDT')).available, 0);
   await assert.rejects(client.request('POST', 'account/withdraw', {}));
 });
 test('Unified adapter rejects invalid version environments and malformed exposure', async () => {

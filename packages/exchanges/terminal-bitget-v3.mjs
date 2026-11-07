@@ -43,7 +43,7 @@ export function createBitgetV3(environment, credentials, fetcher = fetch, clock 
     const rule = list(instruments).find((row) => row.symbol === symbol);
     const quote = list(tickers).find((row) => row.symbol === symbol);
     if (!rule || !quote) throw new Error('Unified market is unavailable');
-    return { equity: Number(assets.usdtEquity), available: Number(coin?.available), positions: positionRows.filter((row) => Number(row.total) > 0),
+    return { equity: Number(assets.usdtEquity), available: coin ? Number(coin.available) : 0, positions: positionRows.filter((row) => Number(row.total) > 0),
       orders: [...list(orders?.list), ...strategyRows], price: Number(quote.lastPrice), quoteTime: Number(quote.ts),
       account: { posMode: settings.holdMode, marginMode: config?.marginMode, isolatedLongLever: config?.leverage, isolatedShortLever: config?.leverage },
       rules: { step: Number(rule.quantityMultiplier), minSize: Number(rule.minOrderQty), minCost: Number(rule.minOrderAmount),
