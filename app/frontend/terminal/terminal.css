@@ -98,3 +98,16 @@ dialog::backdrop { background:#101b32a6; backdrop-filter:blur(4px); }
 [data-theme="dark"] .decision-grid { color:#a9bbd3; }
 [data-theme="dark"] .decision-grid h3, [data-theme="dark"] .decision-grid strong { color:#dce5f2; }
 @media (max-width:700px) { .decision-grid { grid-template-columns:1fr; gap:10px; } }
+.ai-card { border-top:3px solid #7962b5; scroll-margin-top:20px; }
+.ai-card h2 { font-size:17px; }
+.ai-summary { font-size:15px; line-height:1.7; margin:14px 0 20px; }
+.ai-card .decision-grid section { border-radius:8px; background:#f6f8fc; padding:14px; }
+.ai-card .decision-grid h3 { margin-bottom:7px; }
+.ai-card .ai-source { font-size:11px; padding-top:10px; border-top:1px solid #d7dfeb; }
+.ai-footer { display:flex; flex-wrap:wrap; gap:10px; justify-content:space-between; border-top:1px solid #e0e7f0; margin-top:16px; padding-top:12px; }
+.ai-footer small { font-size:11px; max-width:590px; }
+#ai-toggle { font-size:12px; }
+.settings-menu a { display:block; font-size:12px; padding:12px; white-space:nowrap; }
+[data-theme="dark"] .ai-card .decision-grid section { background:#111c2a; }
+[data-theme="dark"] .ai-card .ai-source, [data-theme="dark"] .ai-footer { border-color:#2c3b50; }
+@media (max-width:700px) { .ai-card .section-title { align-items:flex-start; flex-wrap:wrap; } }

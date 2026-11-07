@@ -2,6 +2,8 @@
 
 The original dashboard at `/` and terminal at `/terminal/index.html` share the existing service and administrator password.
 
+The agent terminal also offers optional **Settings > AI commentary**: local LFM explanations and activity summaries, generated in the background. Risk Check, Sizer and Executor continue to run exclusively in code. See [local AI setup, limits and operations](local-ai-commentary.md).
+
 ## Connect your account
 
 1. Sign in to the agent terminal with your OpenTrader administrator password.

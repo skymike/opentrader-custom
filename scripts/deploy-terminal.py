@@ -18,6 +18,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("archive", type=Path)
     parser.add_argument("commit")
+    parser.add_argument("--enable-ai", action="store_true", help="Initialize local commentary on first deployment")
     args = parser.parse_args()
     if not re.fullmatch(r"[0-9a-f]{40}", args.commit):
         raise ValueError("A full GitHub commit SHA is required")
@@ -34,6 +35,7 @@ def main():
         raise ValueError("Artifact commit does not match the requested GitHub commit")
     original = "opentrader-bb-rsi"
     monitor = "opentrader-classic-monitor"
+    assistant = "opentrader-terminal-assistant"
     prior = json.loads(docker("inspect", original))[0]
     networks = list(prior["NetworkSettings"]["Networks"])
     if networks != ["opentrader-private"] or prior["HostConfig"]["PortBindings"]:
@@ -45,13 +47,23 @@ def main():
         f"FROM {base_image}\nCOPY app/ /app/app/\n"
         "COPY packages/exchanges/classic-monitor.mjs /app/packages/exchanges/classic-monitor.mjs\n"
         "COPY packages/exchanges/classic-agents.mjs /app/packages/exchanges/classic-agents.mjs\n"
+        "COPY packages/exchanges/terminal-assistant.mjs /app/packages/exchanges/terminal-assistant.mjs\n"
         f"LABEL org.opencontainers.image.revision={args.commit}\n"
     )
     docker("build", "--network", "none", "-t", image, str(release))
     volume = "opentrader-terminal-state"
     credentials_volume = "opentrader-terminal-credentials"
+    assistant_volume = "opentrader-terminal-assistant"
     docker("volume", "create", volume)
     docker("volume", "create", credentials_volume)
+    docker("volume", "create", assistant_volume)
+    if args.enable_ai:
+        # Preserve a user's saved off preference during later upgrades.
+        docker("run", "--rm", "--network", "none", "--mount", f"type=volume,src={assistant_volume},dst=/assistant",
+               "--entrypoint", "node", image, "--input-type=module", "-e",
+               "import{writeFile}from'node:fs/promises';import{randomUUID}from'node:crypto';"
+               "try{await writeFile('/assistant/settings.json',JSON.stringify({enabled:true,revision:randomUUID()}),"
+               "{flag:'wx',mode:0o600})}catch(e){if(e.code!=='EEXIST')throw e}")
     # Check public markets without overwriting the running account snapshot.
     snapshot = json.loads(docker("run", "--rm", "--tmpfs", "/terminal",
            "-e", "TERMINAL_STATE_PATH=/terminal/state.json", "-w", "/app/packages/exchanges",
@@ -62,6 +74,8 @@ def main():
         raise RuntimeError("Public market checks failed. Existing app is still running.")
     backup = original + "-rollback-" + args.commit[:12]
     monitor_backup = monitor + "-rollback-" + args.commit[:12]
+    assistant_backup = assistant + "-rollback-" + args.commit[:12]
+    existing_assistant = bool(docker("ps", "-aq", "--filter", "name=^/" + assistant + "$"))
     existing_monitor = bool(docker("ps", "-aq", "--filter", "name=^/" + monitor + "$"))
     monitor_environment = json.loads(docker("inspect", monitor))[0]["Config"]["Env"] if existing_monitor else []
     for mount in prior["Mounts"]:
@@ -99,12 +113,13 @@ def main():
                "-e", "TERMINAL_STATE_PATH=/terminal/state.json",
                "-e", "TERMINAL_CREDENTIALS_PATH=/credentials/bitget.json"]
         for mount in prior["Mounts"]:
-            if mount["Destination"] in ["/terminal", "/credentials"]:
+            if mount["Destination"] in ["/terminal", "/credentials", "/assistant"]:
                 continue
             suffix = "" if mount["RW"] else ",readonly"
             run += ["--mount", f"type=volume,src={mount['Name']},dst={mount['Destination']}{suffix}"]
         run += ["--mount", f"type=volume,src={volume},dst=/terminal,readonly",
                 "--mount", f"type=volume,src={credentials_volume},dst=/credentials",
+                "--mount", f"type=volume,src={assistant_volume},dst=/assistant",
                 "-w", "/app/app", "--entrypoint", "node", image, "dist/standalone.mjs"]
         docker(*run)
         for _ in range(20):
@@ -130,7 +145,25 @@ def main():
                "-e", "TERMINAL_STATE_PATH=/terminal/state.json",
                "-e", "TERMINAL_CREDENTIALS_PATH=/credentials/bitget.json",
                "-w", "/app/packages/exchanges", "--entrypoint", "node", image, "classic-monitor.mjs")
+        if existing_assistant:
+            docker("stop", assistant)
+            docker("rename", assistant, assistant_backup)
+        # Always install the idle worker so the UI switch also works after recovery/redeployment.
+        docker("run", "-d", "--name", assistant, "--restart", "unless-stopped",
+               "--network", "host", "--read-only", "--cap-drop", "ALL", "--security-opt", "no-new-privileges",
+               "--cpus", "0.25", "--cpu-shares", "128", "--cpuset-cpus", "2,3",
+               "--memory", "128m", "--memory-swap", "128m", "--pids-limit", "64",
+               "--mount", f"type=volume,src={volume},dst=/terminal,readonly",
+               "--mount", f"type=volume,src={assistant_volume},dst=/assistant",
+               "-w", "/app/packages/exchanges", "--entrypoint", "node", image, "terminal-assistant.mjs")
     except Exception:
+        if docker("ps", "-aq", "--filter", "name=^/" + assistant_backup + "$"):
+            if docker("ps", "-aq", "--filter", "name=^/" + assistant + "$"):
+                docker("rm", "-f", assistant)
+            docker("rename", assistant_backup, assistant)
+            docker("start", assistant)
+        elif not existing_assistant and docker("ps", "-aq", "--filter", "name=^/" + assistant + "$"):
+            docker("rm", "-f", assistant)
         if docker("ps", "-aq", "--filter", "name=^/" + monitor_backup + "$"):
             if docker("ps", "-aq", "--filter", "name=^/" + monitor + "$"):
                 docker("rm", "-f", monitor)

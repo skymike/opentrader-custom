@@ -5,6 +5,53 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import Fastify from "fastify";
 import { registerTerminal } from "./terminal.ts";
+import { createAssistant } from "../../exchanges/terminal-assistant.mjs";
+
+test("commentary is authenticated, cached and immediately hidden on pause or account changes", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "terminal-ai-"));
+  const keys = ["ADMIN_PASSWORD", "TERMINAL_ASSISTANT_PATH", "TERMINAL_STATE_PATH", "TERMINAL_CREDENTIALS_PATH", "TERMINAL_CONTROL_PATH"];
+  const previous = keys.map((key) => process.env[key]);
+  process.env.ADMIN_PASSWORD = "test-password";
+  process.env.TERMINAL_ASSISTANT_PATH = directory;
+  process.env.TERMINAL_STATE_PATH = join(directory, "state.json");
+  process.env.TERMINAL_CREDENTIALS_PATH = join(directory, "connection.json");
+  process.env.TERMINAL_CONTROL_PATH = join(directory, "control.json");
+  const app = Fastify(); registerTerminal(app);
+  const headers = { authorization: "test-password" };
+  const url = "/api/terminal/assistant";
+  try {
+    assert.equal((await app.inject(url)).statusCode, 401);
+    assert.equal((await app.inject({ url, method: "PUT", payload: { enabled: true } })).statusCode, 401);
+    assert.equal((await app.inject({ url, method: "PUT", headers: { ...headers, origin: "https://evil.example" }, payload: { enabled: true } })).statusCode, 403);
+    assert.equal((await app.inject({ url, method: "PUT", headers, payload: { enabled: "yes" } })).statusCode, 400);
+    assert.equal((await app.inject({ url, headers })).json().status, "disabled");
+    const saved = await app.inject({ url, method: "PUT", headers, payload: { enabled: true } });
+    assert.equal(saved.statusCode, 200);
+    const settings = JSON.parse(await readFile(join(directory, "settings.json"), "utf8"));
+    const state = { updatedAt: Date.now(), connectionRevision: "a", accountStatus: "connected", markets: [], logs: [],
+      agents: { paused: false, decisions: [] } };
+    await writeFile(process.env.TERMINAL_STATE_PATH, JSON.stringify(state));
+    await createAssistant({ readSettings: async () => settings, readState: async () => state,
+      generate: async () => "The terminal recorded no new activity.",
+      write: async (result) => writeFile(join(directory, "commentary.json"), JSON.stringify(result)) }).tick();
+    const result = await app.inject({ url, headers });
+    assert.equal(result.headers["cache-control"], "no-store");
+    assert.equal(result.json().status, "ready");
+    await writeFile(process.env.TERMINAL_CONTROL_PATH, JSON.stringify({ paused: true }));
+    assert.equal((await app.inject({ url, headers })).json().summary, undefined);
+    await writeFile(process.env.TERMINAL_CONTROL_PATH, JSON.stringify({ paused: false }));
+    await writeFile(process.env.TERMINAL_CREDENTIALS_PATH, JSON.stringify({ revision: "b", credentials: null }));
+    assert.equal((await app.inject({ url, headers })).json().summary, undefined);
+    await app.inject({ url, method: "PUT", headers, payload: { enabled: false } });
+    assert.equal((await app.inject({ url, headers })).json().status, "disabled");
+    await writeFile(join(directory, "settings.json"), "{malformed");
+    assert.equal((await app.inject({ url, headers })).json().enabled, false);
+  } finally {
+    await app.close();
+    keys.forEach((key, i) => { if (previous[i] === undefined) delete process.env[key]; else process.env[key] = previous[i]; });
+    await rm(directory, { recursive: true, force: true });
+  }
+});
 
 test("terminal protects account data and securely manages connection settings", async () => {
   const directory = await mkdtemp(join(tmpdir(), "classic-terminal-"));

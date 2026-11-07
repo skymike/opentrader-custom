@@ -13,7 +13,7 @@
     <nav class="topbar" aria-label="Dashboard navigation">
       <a class="brand" href="/">◈ <span>OpenTrader</span></a>
       <div class="view-tabs"><a href="/">Original dashboard</a><a href="./index.html" aria-current="page">Agent terminal</a></div>
-      <div class="toolbar"><button id="theme-toggle" class="secondary" type="button" aria-label="Switch color theme">Dark mode</button><details class="settings-menu"><summary>Settings</summary><div><button id="open-settings" class="secondary" type="button">Bitget connection</button></div></details></div>
+      <div class="toolbar"><button id="theme-toggle" class="secondary" type="button" aria-label="Switch color theme">Dark mode</button><details class="settings-menu"><summary>Settings</summary><div><button id="open-settings" class="secondary" type="button">Bitget connection</button><a href="#ai-commentary">AI commentary</a></div></details></div>
     </nav>
     <main>
       <header class="heading">
@@ -37,6 +37,14 @@
           <article class="flow"><div class="section-title"><h2>Agent pipeline</h2><button id="pause-agents" type="button" class="secondary" disabled>Pause agents</button></div><div class="steps"><span>01 Scan</span><i>→</i><span>02 Check</span><i>→</i><span>03 Size</span><i>→</i><span>04 Preflight</span><i>→</i><span>05 Log</span><i>→</i><span>06 Equity</span></div><small id="agent-control-status">Order proposals only. Pausing prevents new proposals; it does not close exchange positions.</small></article>
           <section id="markets" class="market-grid" aria-label="Market overview"></section>
           <article><div class="section-title"><h2>Agent decisions</h2><span>Live checks · No orders submitted</span></div><div id="agent-decisions" class="decision-grid"><p class="empty">Sign in to see signals, risk checks and order proposals.</p></div></article>
+          <article id="ai-commentary" class="ai-card" aria-labelledby="ai-heading">
+            <div class="section-title"><div><p class="eyebrow">LOCAL AI · LFM2.5</p><h2 id="ai-heading">Your activity, explained</h2></div><button id="ai-toggle" type="button" class="secondary" aria-pressed="false" disabled>Enable AI commentary</button></div>
+            <p id="ai-status" class="muted" role="status">Sign in to view AI commentary.</p>
+            <p id="ai-summary" class="ai-summary" hidden></p>
+            <div id="ai-explanations" class="decision-grid"></div>
+            <p id="ai-facts" class="muted"></p>
+            <div class="ai-footer"><small>AI wording may be imperfect. The recorded code decisions below each explanation are authoritative. AI cannot approve trades or change risk, size or execution.</small><small id="ai-time"></small></div>
+          </article>
           <article class="chart"><div class="section-title"><h2>Equity over time</h2><span>Account samples · USDT</span></div><svg id="curve" hidden viewBox="0 0 600 100" role="img" aria-label="Account equity history"><polyline fill="none" stroke="currentColor" stroke-width="2"></polyline></svg><div id="chart-empty" class="empty">Your account's equity history will appear after connection.</div></article>
           <article><div class="section-title"><h2>Open positions</h2><span>Bitget USDT futures</span></div><div class="table-wrap"><table><thead><tr><th>Market</th><th>Side</th><th>Quantity</th><th>Unrealized P&amp;L</th></tr></thead><tbody id="positions"></tbody></table></div><p id="positions-empty" class="empty">Connect a read-only Bitget key to view positions.</p></article>
           <div class="lower-grid">

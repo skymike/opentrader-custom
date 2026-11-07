@@ -182,6 +182,7 @@ let lastState;
 let connectionGeneration = 0;
 function disconnect() {
   authorization = undefined;
+  clearAssistant();
   activeRequest?.abort();
   connectionConfig = undefined;
   element("settings-form").reset();
@@ -211,11 +212,13 @@ async function refresh() {
     const state = await response.json();
     if (authorization !== usedAuthorization || connectionGeneration !== usedGeneration) return;
     render(state);
+    void refreshAssistant();
     element("connect").hidden = true;
     element("disconnect").hidden = false;
     if (!savingSettings) element("settings-fields").disabled = false;
   } catch (error) {
     if (authorization || error.message.startsWith("Password")) {
+      clearAssistant();
       element("status").textContent = error.name === "AbortError" ? "Connection timed out. Retrying shortly." : error.message;
       element("freshness").textContent = "Connection interrupted · Displayed data may be stale";
     }
@@ -290,6 +293,7 @@ async function saveSettings(remove = false) {
     if (!response.ok) throw new Error(result.message || "Unable to save settings.");
     connectionConfig = result;
     connectionGeneration++;
+    clearAssistant();
     render({ ...lastState, updatedAt: lastState?.updatedAt ?? null, markets: lastState?.markets ?? [], logs: lastState?.logs ?? [],
       account: null, equityHistory: [], agents: null, accountStatus: result.configured ? "validating" : "not-connected", connection: result });
     element("settings-form").reset();
@@ -318,7 +322,98 @@ element("pause-agents").addEventListener("click", async () => {
     if (!response.ok) throw new Error("Could not update agent controls. Please try again.");
     const control = await response.json();
     connectionGeneration++;
+    clearAssistant();
     render({ ...lastState, control, agents: null });
   } catch (error) { element("agent-control-status").textContent = error.message; }
   finally { element("pause-agents").disabled = !authorization; }
+});
+
+// AI reads are independent of market refreshes. Neither route invokes inference.
+let assistantEnabled = false;
+let assistantRequest;
+let assistantBusy = false;
+let assistantSaving = false;
+function clearAssistant() {
+  assistantRequest?.abort();
+  element("ai-summary").hidden = true;
+  element("ai-summary").textContent = "";
+  element("ai-explanations").replaceChildren();
+  element("ai-facts").textContent = "";
+  element("ai-time").textContent = "";
+  element("ai-status").textContent = authorization ? "Waiting for current commentary…" : "Sign in to view AI commentary.";
+  element("ai-toggle").disabled = !authorization;
+}
+function renderAssistant(data) {
+  assistantEnabled = data.enabled;
+  element("ai-toggle").textContent = data.enabled ? "Turn AI off" : "Enable AI commentary";
+  element("ai-toggle").setAttribute("aria-pressed", String(data.enabled));
+  element("ai-toggle").disabled = !authorization || assistantSaving;
+  const messages = { ready: "AI explanation · Based on the bot's recorded decisions",
+    disabled: "AI commentary is off. The six trading modules continue to run in code.",
+    generating: "Writing a short explanation in the background. Market monitoring continues.",
+    waiting: "Waiting for fresh commentary. Updates are limited to once every five minutes.",
+    unavailable: "Local AI is temporarily unavailable. Recorded code decisions remain available below; retries are automatic." };
+  element("ai-status").textContent = messages[data.status] ?? messages.unavailable;
+  element("ai-summary").textContent = data.summary ?? "";
+  element("ai-summary").hidden = !data.summary;
+  element("ai-time").textContent = data.generatedAt ? "Written " + new Date(data.generatedAt).toLocaleTimeString() : "";
+  element("ai-facts").textContent = data.facts ? `${data.facts.activity.events} recorded updates in the last 15 minutes · ${data.facts.connectedMarkets} / 2 markets connected · Account ${data.facts.account}${data.facts.paused ? " · Agents paused" : ""}` : "";
+  element("ai-explanations").replaceChildren(...(data.facts?.decisions ?? []).map((decision) => {
+    const section = document.createElement("section");
+    const heading = document.createElement("h3");
+    heading.textContent = decision.symbol;
+    section.append(heading);
+    const explanation = data.explanations?.find((item) => item.symbol === decision.symbol);
+    if (explanation) {
+      const text = document.createElement("p");
+      text.textContent = explanation.text;
+      section.append(text);
+    }
+    const source = document.createElement("p");
+    source.className = "ai-source";
+    source.textContent = "Recorded code decision: " + decision.reason;
+    section.append(source);
+    return section;
+  }));
+}
+async function refreshAssistant() {
+  if (!authorization || assistantBusy || assistantSaving) return;
+  assistantBusy = true;
+  const usedAuthorization = authorization;
+  const generation = connectionGeneration;
+  assistantRequest = new AbortController();
+  const timer = setTimeout(() => assistantRequest?.abort(), 4000);
+  try {
+    const response = await fetch("/api/terminal/assistant", { headers: { authorization }, signal: assistantRequest.signal });
+    if (!response.ok) throw new Error("Commentary unavailable");
+    const data = await response.json();
+    if (authorization === usedAuthorization && generation === connectionGeneration) renderAssistant(data);
+  } catch {
+    if (authorization === usedAuthorization && generation === connectionGeneration) {
+      clearAssistant();
+      element("ai-status").textContent = "Commentary is temporarily unavailable. Market monitoring continues.";
+    }
+  } finally { clearTimeout(timer); assistantBusy = false; }
+}
+element("ai-toggle").addEventListener("click", async () => {
+  if (!authorization || assistantSaving) return;
+  assistantSaving = true;
+  const usedAuthorization = authorization;
+  connectionGeneration++;
+  clearAssistant();
+  element("ai-toggle").disabled = true;
+  try {
+    const response = await fetch("/api/terminal/assistant", { method: "PUT", headers: { authorization, "Content-Type": "application/json" },
+      body: JSON.stringify({ enabled: !assistantEnabled }), signal: AbortSignal.timeout(5000) });
+    if (authorization !== usedAuthorization) return;
+    if (!response.ok) throw new Error("Could not save AI settings. Please try again.");
+    const data = await response.json();
+    renderAssistant({ ...data, status: data.enabled ? "waiting" : "disabled" });
+  } catch (error) {
+    if (authorization === usedAuthorization) element("ai-status").textContent = error.message;
+  } finally {
+    assistantSaving = false;
+    element("ai-toggle").disabled = !authorization;
+    void refreshAssistant();
+  }
 });

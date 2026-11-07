@@ -2,11 +2,17 @@ import { randomUUID, timingSafeEqual } from "node:crypto";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import { presentCommentary } from "../../exchanges/terminal-assistant.mjs";
 
 type Connection = { revision: string; updatedAt: number; permission: "read-only" | "read-write";
   credentials: { apiKey: string; secret: string; passphrase: string } | null };
 const credentialsPath = () => process.env.TERMINAL_CREDENTIALS_PATH ?? "/app/data/terminal/bitget.json";
 const controlPath = () => process.env.TERMINAL_CONTROL_PATH ?? "/credentials/control.json";
+const assistantPath = () => process.env.TERMINAL_ASSISTANT_PATH ?? "/assistant";
+async function readAssistantSettings() {
+  try { return JSON.parse(await readFile(assistantPath() + "/settings.json", "utf8")); }
+  catch { return { enabled: false }; }
+}
 async function readControl() {
   try { const control = JSON.parse(await readFile(controlPath(), "utf8")); return { paused: control.paused !== false }; }
   catch (error) { return { paused: (error as NodeJS.ErrnoException).code !== "ENOENT" }; }
@@ -36,6 +42,34 @@ export function registerTerminal(app: FastifyInstance) {
   app.get("/api/terminal/connection", { preHandler: authorize }, async (_request, reply) => {
     try { return publicConnection(await readConnection()); }
     catch { return reply.code(503).send({ message: "Connection settings are unavailable" }); }
+  });
+  app.put("/api/terminal/assistant", { preHandler: authorize, bodyLimit: 512 }, async (request, reply) => {
+    const body = request.body as { enabled?: unknown } | undefined;
+    if (typeof body?.enabled !== "boolean") return reply.code(400).send({ message: "Choose whether AI commentary is enabled" });
+    try {
+      const filename = assistantPath() + "/settings.json";
+      await mkdir(dirname(filename), { recursive: true, mode: 0o700 });
+      const settings = { enabled: body.enabled, revision: randomUUID() };
+      const temporary = filename + "." + settings.revision + ".tmp";
+      await writeFile(temporary, JSON.stringify(settings), { mode: 0o600, flag: "wx" });
+      await rename(temporary, filename);
+      return { enabled: settings.enabled };
+    } catch { return reply.code(503).send({ message: "AI setting could not be saved" }); }
+  });
+  app.get("/api/terminal/assistant", { preHandler: authorize }, async () => {
+    const settings = await readAssistantSettings();
+    let state: any = {};
+    let saved;
+    try {
+      state = JSON.parse(await readFile(process.env.TERMINAL_STATE_PATH ?? "/app/data/terminal/state.json", "utf8"));
+      const config = await readConnection();
+      const control = await readControl();
+      if ((config && config.revision !== state.connectionRevision) || control.paused !== state.agents?.paused) {
+        state = {}; // Never explain a previous account or an outdated operator decision.
+      }
+      saved = JSON.parse(await readFile(assistantPath() + "/commentary.json", "utf8"));
+    } catch { /* Cached commentary is optional; trading-state endpoints stay independent. */ }
+    return presentCommentary(saved, state, settings);
   });
   app.put("/api/terminal/control", { preHandler: authorize, bodyLimit: 512 }, async (request, reply) => {
     const body = request.body as { paused?: unknown } | undefined;
