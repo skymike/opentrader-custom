@@ -1,6 +1,9 @@
 export function createConnectionsPanel(getAuthorization, onChange, editExecution) {
   const el = id => document.getElementById(id);
   let state, editingId = null, editingRevision = null, busy = false, generation = 0, execution = {};
+  let session = 0;
+  const checks = new Map();
+  const checkId = (connection, purpose) => purpose + ':' + (connection.id ?? connection.environment);
   const status = text => { el('settings-status').textContent = text; };
   function button(text, action, className = 'secondary') {
     const node = document.createElement('button'); node.type = 'button'; node.textContent = text; node.className = className;
@@ -18,6 +21,17 @@ export function createConnectionsPanel(getAuthorization, onChange, editExecution
     if (connection.active) { const selected = document.createElement('span'); selected.className = 'key-badge selected'; selected.textContent = 'Selected'; badges.append(selected); }
     content.append(badges);
     if (connection.keyHint) { const hint = document.createElement('small'); hint.textContent = 'API key ' + connection.keyHint + ' · ' + (connection.permission === 'read-write' ? 'Read-write declared' : 'Read-only declared'); content.append(hint); }
+    const previous = checks.get(checkId(connection, purpose));
+    const result = previous?.revision === connection.revision ? previous : null;
+    const feedback = document.createElement('div'); feedback.className = 'key-check ' + (result?.status ?? 'untested'); feedback.setAttribute('role', 'status');
+    const label = document.createElement('strong');
+    label.textContent = ({ connected: 'Connected', error: 'Connection error', testing: 'Testing…' })[result?.status] ?? 'Not tested';
+    feedback.append(label);
+    if (result?.checkedAt) { const time = document.createElement('span'); time.textContent = ' · Last test ' + new Date(result.checkedAt).toLocaleTimeString(); feedback.append(time); }
+    if (result?.message && result.status === 'error') { const message = document.createElement('small'); message.textContent = result.message; feedback.append(message); }
+    content.append(feedback);
+    const test = button(result?.status === 'testing' ? 'Testing…' : 'Test connection', () => void testConnection(connection, purpose));
+    test.disabled ||= result?.status === 'testing'; actions.unshift(test);
     const controls = document.createElement('div'); controls.className = 'key-actions'; controls.append(...actions);
     card.append(content, controls); return card;
   }
@@ -40,15 +54,31 @@ export function createConnectionsPanel(getAuthorization, onChange, editExecution
       ])));
     if (!Object.values(execution).some(c => c.configured)) el('saved-execution-keys').textContent = getAuthorization() ? 'No execution keys saved.' : 'Sign in to view saved keys.';
   }
-  async function api(url, method = 'GET', body) {
-    const auth = getAuthorization(), version = generation;
+  async function api(url, method = 'GET', body, testing = false) {
+    const auth = getAuthorization(), version = generation, usedSession = session;
     if (!auth) throw new Error('Sign in to your workspace first.');
     const response = await fetch(url, { method, headers: { authorization: auth, 'Content-Type': 'application/json' },
       ...(body ? { body: JSON.stringify(body) } : {}), signal: AbortSignal.timeout(15000) });
     const data = await response.json();
-    if (auth !== getAuthorization() || version !== generation) throw new Error('Session changed');
+    if (auth !== getAuthorization() || usedSession !== session || (!testing && version !== generation)) throw new Error('Session changed');
     if (!response.ok) throw Object.assign(new Error(data.message ?? 'Could not update saved connections.'), { status: response.status });
     return data;
+  }
+  async function testConnection(connection, purpose) {
+    const id = checkId(connection, purpose), usedSession = session;
+    if (!getAuthorization() || busy || (checks.get(id)?.status === 'testing' && checks.get(id)?.revision === connection.revision)) return;
+    const pending = { revision: connection.revision, status: 'testing' };
+    checks.set(id, pending); render();
+    status('Testing saved account access. Results appear beside each key.');
+    try {
+      const monitoring = purpose === 'Monitoring';
+      const result = await api(monitoring ? '/api/terminal/connections/' + connection.id + '/check' : '/api/terminal/trading/connection/check',
+        'POST', { revision: connection.revision, ...(!monitoring ? { environment: connection.environment } : {}) }, true);
+      if (usedSession === session && checks.get(id) === pending) checks.set(id, { ...result, revision: connection.revision });
+    } catch (error) {
+      if (usedSession === session && checks.get(id) === pending) checks.set(id, { revision: connection.revision, status: 'error', checkedAt: Date.now(),
+        message: error.name === 'TimeoutError' ? 'The test timed out. Try again shortly.' : error.message });
+    } finally { if (usedSession === session) render(); }
   }
   async function refresh() {
     if (!getAuthorization() || busy) return;
@@ -98,7 +128,7 @@ export function createConnectionsPanel(getAuthorization, onChange, editExecution
     document.querySelector('.settings-menu').open = false; closeEditor(); render();
     el('settings-dialog').showModal(); void refresh();
   }
-  function clear() { generation++; state = undefined; execution = {}; closeEditor(); render(); status('Sign in to your workspace first.'); }
+  function clear() { generation++; session++; checks.clear(); state = undefined; execution = {}; closeEditor(); render(); status('Sign in to your workspace first.'); }
   el('open-settings').addEventListener('click', open);
   el('close-settings').addEventListener('click', () => el('settings-dialog').close());
   el('settings-dialog').addEventListener('close', () => { closeEditor(); if (location.hash === '#settings') history.replaceState(null, '', location.pathname); });

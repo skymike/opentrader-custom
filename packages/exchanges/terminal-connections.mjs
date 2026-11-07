@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { mkdir, readFile, writeFile, rename } from 'node:fs/promises';
 import { dirname } from 'node:path';
+import { checkConnection, withConnectionCheck } from './terminal-connection-check.mjs';
 
 const path = () => process.env.TERMINAL_CREDENTIALS_PATH ?? '/app/data/terminal/bitget.json';
 const fail = (status, message) => { const error = new Error(message); error.status = status; throw error; };
@@ -37,11 +38,12 @@ export async function readConnection() {
   catch (error) { if (error.code === 'ENOENT') return null; throw error; }
 }
 function publicItem(connection, activeId) {
-  return { id: connection.id, name: connection.name, apiVersion: connection.apiVersion,
+  return { id: connection.id, revision: profileRevision(connection), name: connection.name, apiVersion: connection.apiVersion,
     environment: connection.environment, permission: connection.permission, updatedAt: connection.updatedAt,
     keyHint: connection.credentials.apiKey.length > 8 ? '•••• ' + connection.credentials.apiKey.slice(-4) : '••••',
     active: connection.id === activeId };
 }
+const profileRevision = connection => connection.revision ?? String(connection.updatedAt ?? connection.id);
 export function publicConnection(config) {
   const value = normalize(config);
   const active = value.connections.find(c => c.id === value.activeId);
@@ -66,7 +68,7 @@ function editProfile(body, previous) {
     credentials = { apiKey: body.apiKey.trim(), secret: body.secret.trim(), passphrase: body.passphrase };
   }
   if (!credentials) fail(400, 'Enter all three Bitget credentials');
-  return { id: previous?.id ?? randomUUID(), name: name.trim(), apiVersion, environment, permission: body.permission,
+  return { id: previous?.id ?? randomUUID(), revision: randomUUID(), name: name.trim(), apiVersion, environment, permission: body.permission,
     credentials, updatedAt: Date.now() };
 }
 async function mutate(operation, id, body, legacy = false) {
@@ -124,4 +126,15 @@ export function registerConnections(app, authorize) {
     handler: guarded(req => mutate(req.method === 'DELETE' ? 'remove' : 'edit', req.params.id, req.body)) });
   app.post('/api/terminal/connections/:id/activate', { preHandler: authorize, bodyLimit: 512 },
     guarded(req => mutate('activate', req.params.id, req.body)));
+  app.post('/api/terminal/connections/:id/check', { preHandler: authorize, bodyLimit: 512 }, guarded(req =>
+    withConnectionCheck(path() + ':' + req.params.id, async () => {
+      const connection = (await readConnection())?.connections.find(c => c.id === req.params.id);
+      if (!connection) fail(404, 'This saved connection no longer exists');
+      const revision = profileRevision(connection);
+      if (req.body?.revision !== revision) fail(409, 'Connection changed. Refresh the list and test again.');
+      const result = await checkConnection(connection);
+      const current = (await readConnection())?.connections.find(c => c.id === req.params.id);
+      if (!current || profileRevision(current) !== revision) fail(409, 'Connection changed during the test. Test the updated key again.');
+      return { ...result, revision };
+    })));
 }

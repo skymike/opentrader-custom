@@ -26,37 +26,44 @@
         <button id="disconnect" class="secondary" hidden>Disconnect</button>
       </section>
       <article id="trading-panel" class="trading-panel">
-        <div class="section-title"><h2>Trade execution</h2><strong id="trading-badge">DEMO · Entries stopped</strong></div>
-        <p id="trading-status" role="status">Sign in to manage demo and live execution.</p>
-        <p id="trade-account" class="muted"></p>
+        <div class="execution-heading"><div><p class="eyebrow">TRADING CONTROLS</p><h2>Trade execution</h2></div><strong id="trading-badge" class="execution-badge">DEMO · Entries stopped</strong></div>
+        <p id="trading-status" class="execution-status" role="status">Sign in to manage trading.</p>
+        <p id="trade-halt" class="execution-halt" role="alert" hidden></p>
+        <div class="execution-account"><span id="trade-account" class="muted">Account not checked</span><span id="trade-limits" class="muted">2% risk · 2% SL / 4% TP</span></div>
         <fieldset id="trading-fields" disabled>
           <legend class="sr-only">Trading controls</legend>
-          <form id="trading-form" class="trading-grid">
-            <label>Environment<select id="trade-environment"><option value="demo">Demo · Virtual funds</option><option value="live">Live · Real funds</option></select></label>
-            <label>Execution<select id="trade-mode"><option value="approval">Approve each trade</option><option value="automatic">Automatic</option></select></label>
-            <label>Maximum order (USDT)<input id="trade-maxNotional" type="number" min="5" max="10000" step="1" value="100" required></label>
-            <label>Maximum equity risk (%)<input id="trade-riskPct" type="number" min="0.1" max="2" step="0.1" value="2" required></label>
-            <label>Daily equity-loss stop (%)<input id="trade-dailyLossPct" type="number" min="0.1" max="10" step="0.1" value="3" required></label>
-            <div class="trading-actions"><button type="submit">Save settings &amp; stop entries</button><button id="trade-arm" class="secondary" type="button">Enable new entries</button><button id="trade-reset" class="secondary" type="button" hidden>Reset reviewed halt</button></div>
+          <form id="trading-form" class="execution-controls trading-grid">
+            <label>Account<select id="trade-environment"><option value="demo">Demo · Virtual funds</option><option value="live">Live · Real funds</option></select></label>
+            <label>Mode<select id="trade-mode"><option value="approval">Approve each trade</option><option value="automatic">Automatic</option></select></label>
+            <label>Order limit · USDT<input id="trade-maxNotional" type="number" min="5" max="10000" step="1" value="100" required></label>
+            <div class="execution-primary"><button id="trade-arm" type="button">Enable demo entries</button><button id="trade-reset" class="secondary danger" type="button" hidden>Reset halt</button></div>
+            <div id="trade-unsaved" class="execution-unsaved" hidden><span>Unsaved changes</span><button type="submit">Save &amp; stop entries</button></div>
+            <details class="execution-detail" id="trade-risk-settings"><summary>Risk settings <span id="trade-risk-summary">2% equity · 3% daily loss limit</span></summary><div class="trading-grid">
+              <label>Risk per trade · % equity<input id="trade-riskPct" type="number" min="0.1" max="2" step="0.1" value="2" required></label>
+              <label>Daily loss limit · % equity<input id="trade-dailyLossPct" type="number" min="0.1" max="10" step="0.1" value="3" required></label>
+            </div><small>BTC / SOL · Hourly Bollinger / RSI · One managed position · One-way, isolated, 1× margin. Daily loss resets at UTC midnight and includes funding and transfers.</small></details>
           </form>
-          <p class="muted">BTC / SOL · Hourly Bollinger / RSI · One managed position · One-way, isolated, 1× margin required. Stopping entries keeps position monitoring running. Daily loss uses UTC account equity, including funding and transfers.</p>
-          <details id="execution-connections"><summary>Execution account connections</summary><p id="trade-connection-status"></p>
+          <p class="execution-note">Stopping entries keeps existing positions monitored.</p>
+          <div class="execution-activity">
+            <section><h3>Awaiting approval <span id="trade-proposal-count" class="count-badge">0</span></h3><div id="trade-proposals" class="decision-grid"></div><p id="trade-proposals-empty" class="muted">No trades awaiting approval.</p></section>
+            <section><h3>Managed positions <span id="trade-position-count" class="count-badge">0</span></h3><div id="trade-orders"></div><p id="trade-orders-empty" class="muted">No open managed orders or positions.</p></section>
+          </div>
+          <details id="execution-connections" class="execution-detail"><summary>Execution keys <span id="trade-connection-status"></span></summary>
             <form id="trading-connection-form" class="trading-grid">
               <label>Key environment<select id="trade-key-environment"><option value="demo">Bitget demo key</option><option value="live">Bitget live key</option></select></label>
               <label>Account API<select id="trade-api-version"><option value="v2">Classic · V2</option><option value="v3">Unified · V3</option></select></label>
               <label>API key<input id="trade-key" type="password" autocomplete="new-password" maxlength="512"></label>
               <label>API secret<input id="trade-secret" type="password" autocomplete="new-password" maxlength="512"></label>
               <label>Passphrase<input id="trade-passphrase" type="password" autocomplete="new-password" maxlength="512"></label>
-              <div class="trading-actions"><button type="submit">Save execution key</button><button id="trade-check-key" type="button" class="secondary">Check connection</button><button id="trade-remove-key" type="button" class="secondary">Remove selected key</button></div>
+              <div class="trading-actions"><button type="submit">Save execution key</button><button id="trade-check-key" type="button" class="secondary">Check account setup</button><button id="trade-remove-key" type="button" class="secondary danger">Remove selected key</button></div>
             </form>
-            <small>Choose the API matching your Bitget account: Classic V2 or Unified V3. Use separate demo/live keys with trading permission. Leave all credential fields blank to keep a saved key when changing API. Saving stops new entries.</small>
+            <small>Leave all credentials blank to keep the saved key. Saving stops new entries. Manage and test each saved key in Settings → Bitget connection.</small>
           </details>
-          <h3>Trades awaiting approval</h3><div id="trade-proposals" class="decision-grid"></div>
-          <details><summary>Test demo execution</summary><p>Create one clearly labelled test trade, capped at 20 USDT, through your selected approval or automatic mode. Test orders use current prices; they are not strategy signals. Close the test using the managed-position action below.</p>
+          <details class="execution-detail"><summary>Recent history <span id="trade-history-count">0 completed trades</span></summary><div id="trade-history"></div></details>
+          <details class="execution-detail" id="demo-test-tools"><summary>Demo test tools <span>Optional · Virtual funds only</span></summary><p class="muted">Creates one test trade up to 20 USDT. Approval mode waits for you; automatic mode submits it immediately. Close it under Managed positions.</p>
             <select id="demo-test-symbol"><option value="BTC/USDT:USDT">BTC / USDT</option><option value="SOL/USDT:USDT">SOL / USDT</option></select>
             <button id="demo-test-order" type="button" class="secondary">Create demo test trade</button>
           </details>
-          <h3>Managed orders and positions</h3><div id="trade-orders"></div>
         </fieldset>
       </article>
       <h2>Read-only monitoring account</h2><p class="muted">The account summary below uses your separate monitoring connection. Execution account details appear above.</p>
@@ -93,7 +100,7 @@
   </div>
   <dialog id="settings-dialog" aria-labelledby="settings-title">
     <div class="dialog-heading"><div><p class="eyebrow">CONNECTION SETTINGS</p><h2 id="settings-title">Saved Bitget connections</h2></div><button id="close-settings" type="button" class="secondary" aria-label="Close connection settings">✕</button></div>
-    <p class="muted">Manage your saved keys. API version and environment are shown on every connection.</p>
+    <p class="muted">Manage your saved keys and test account access. Tests only read data; they do not place orders or verify trading permission.</p>
     <p id="settings-status" class="settings-status" role="status">Sign in to your workspace first.</p>
     <div class="section-title"><h3>Monitoring connections</h3><button id="add-connection" type="button" class="secondary" disabled>+ Add connection</button></div>
     <div id="saved-connections" class="saved-connections" aria-label="Saved monitoring keys"></div>

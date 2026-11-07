@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import { createTradingClient } from './terminal-exchange-router.mjs';
+import { checkConnection, withConnectionCheck } from './terminal-connection-check.mjs';
 import { tradingPath, defaultSettings, validateSettings, emptyJournal, validateJournal, activeEntry,
   readJson, atomicJson, withTradingLock } from './terminal-trading-store.mjs';
 
@@ -25,6 +26,18 @@ export function registerTrading(app, authorize) {
     catch (error) { return reply.code(error.status ?? 503).send({ message: error.status ? error.message : 'Trading service busy or unavailable. Retry shortly; check worker status if this persists.' }); }
   };
   app.get(base, { preHandler: authorize }, guarded(async () => present(await load())));
+  app.post(base + '/connection/check', { preHandler: authorize, bodyLimit: 512 }, guarded(request => {
+    const environment = request.body?.environment;
+    if (!['demo', 'live'].includes(environment)) fail(400, 'Choose demo or live');
+    return withConnectionCheck(tradingPath() + ':' + environment, async () => {
+      const connection = (await load()).connections[environment];
+      if (!connection?.credentials) fail(404, 'Save this execution key first');
+      if (request.body?.revision !== connection.revision) fail(409, 'Connection changed. Refresh and test again.');
+      const result = await checkConnection({ ...connection, environment, apiVersion: connection.apiVersion ?? 'v2' });
+      if ((await load()).connections[environment]?.revision !== connection.revision) fail(409, 'Connection changed during the test. Test the updated key again.');
+      return { ...result, revision: connection.revision };
+    });
+  }));
   app.put(base, { preHandler: authorize, bodyLimit: 2048 }, guarded(async (request) => withTradingLock(tradingPath(), async () => {
     const state = await load(), body = request.body;
     if (!body || body.revision !== state.settings.revision) fail(409, 'Settings changed; refresh before saving');

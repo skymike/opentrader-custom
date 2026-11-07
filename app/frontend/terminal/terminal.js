@@ -178,6 +178,16 @@ function render(state) {
   element("logs-empty").hidden = state.logs.length > 0;
 }
 let authorization;
+// A protected gateway may supply the backend credential without exposing it to this page.
+// Run after module initialization so all existing controls keep their normal lifecycle.
+queueMicrotask(async () => {
+  try {
+    const response = await fetch('/api/terminal/state', { credentials: 'same-origin', cache: 'no-store', signal: AbortSignal.timeout(8000) });
+    if (!response.ok || authorization) return;
+    authorization = 'portal-session';
+    await refresh();
+  } catch { /* Retain manual login when no authenticated gateway is available. */ }
+});
 const trading = createTradingPanel(() => authorization);
 let busy = false;
 let activeRequest;
