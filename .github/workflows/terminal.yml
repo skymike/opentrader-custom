@@ -23,6 +23,8 @@ jobs:
         run: node --experimental-strip-types --test packages/bot/src/terminal.node-test.mjs packages/bot/src/terminal-connections.node-test.mjs packages/bot/src/terminal-connection-check.node-test.mjs packages/bot/src/terminal-trading.node-test.mjs packages/bot/src/terminal-original.node-test.mjs packages/exchanges/classic-monitor.node-test.mjs packages/exchanges/classic-agents.node-test.mjs packages/exchanges/terminal-assistant.node-test.mjs packages/exchanges/terminal-trading.node-test.mjs packages/exchanges/terminal-v3.node-test.mjs
       - name: Build OpenTrader
         run: pnpm --filter opentrader exec tsup
+      - name: Test bounded multi-market scanning and settings
+        run: node --experimental-strip-types --test packages/exchanges/terminal-markets.node-test.mjs packages/bot/src/terminal-markets.node-test.mjs
       - name: Test automatic dashboard connection checks
         run: node --test packages/bot/src/terminal-auto-checks.node-test.mjs app/frontend/terminal/chart-data.test.mjs app/frontend/terminal/bot-overlays.test.mjs
       - run: python3 -m py_compile scripts/deploy-terminal.py scripts/setup-terminal-ai.py scripts/migrate-terminal-ai.py
@@ -39,6 +41,7 @@ jobs:
           cp packages/exchanges/terminal-assistant.mjs release/packages/exchanges/
           cp packages/exchanges/terminal-trading-store.mjs packages/exchanges/terminal-bitget.mjs packages/exchanges/terminal-execution.mjs packages/exchanges/terminal-trader.mjs release/packages/exchanges/
           cp packages/exchanges/terminal-bitget-v3.mjs packages/exchanges/terminal-exchange-router.mjs release/packages/exchanges/
+          cp packages/exchanges/terminal-candles.mjs packages/exchanges/terminal-markets.mjs packages/exchanges/terminal-market-feed.mjs release/packages/exchanges/
           printf '%s\n' "$GITHUB_SHA" > release/COMMIT
           tar -czf terminal-release.tar.gz -C release .
           cp scripts/deploy-terminal.py deploy-terminal.py

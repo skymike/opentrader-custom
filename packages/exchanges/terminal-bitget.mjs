@@ -53,6 +53,11 @@ export function createBitget(environment, credentials, fetcher = fetch, clock = 
         tick: Number(rule.priceEndStep) * 10 ** -Number(rule.pricePlace), maxSize: Number(rule.maxOrderQty), status: rule.symbolStatus } };
   }
   return { request, context,
+    accountSnapshot: async () => {
+      const rows = await request('GET', 'account/accounts', base);
+      const balance = rows.find(row => row.marginCoin === 'USDT');
+      return { equity: Number(balance?.usdtEquity), available: Number(balance?.available) };
+    },
     detail: (entry, closing = false) => request('GET', 'order/detail', { productType: base.productType, symbol: entry.symbol,
       clientOid: closing ? entry.closeId : entry.id }),
     positions: async () => validatePositions(await request('GET', 'position/all-position', base)),

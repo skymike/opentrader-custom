@@ -2,11 +2,11 @@ import { createHash } from 'node:crypto';
 import { scanAgent } from './classic-agents.mjs';
 import { activeEntry, validateJournal, validateSettings } from './terminal-trading-store.mjs';
 import { validQuantity, validatePositions } from './terminal-bitget.mjs';
+import { toSymbolId as symbolId, defaultMarkets, validateMarkets } from './terminal-markets.mjs';
 
 const positive = (n) => Number.isFinite(n) && n > 0;
 const hash = (value) => 'ot' + createHash('sha256').update(value).digest('hex').slice(0, 28);
 const round = (n, step, direction = Math.floor) => Number((direction(n / step + 1e-9) * step).toPrecision(12));
-const symbolId = (symbol) => ({ 'BTC/USDT:USDT': 'BTCUSDT', 'SOL/USDT:USDT': 'SOLUSDT' })[symbol];
 
 export function makeProposal(market, context, settings, connection, now) {
   const signal = scanAgent({ ...market, price: context.price }, now);
@@ -113,8 +113,9 @@ async function reconcile(entry, client, journal, save, closeRequested, observedA
 export async function cycle(input, { clientFor, save, now = Date.now }) {
   const { settings, journal, connections, commands, marketState, paused } = input;
   validateSettings(settings); validateJournal(journal);
-  journal.updatedAt = now(); journal.message = 'Waiting for a qualifying BTC/SOL signal';
+  journal.updatedAt = now(); journal.message = 'Waiting for a qualifying signal on Trade pairs';
   const validCommands = commands.filter((c) => !journal.handled.includes(c.id) && c.expiresAt >= now());
+  const consumed = new Set();
   for (const entry of journal.entries.filter(activeEntry)) {
     const connection = connections[entry.environment];
     if (!connection?.credentials || connection.revision !== entry.connectionRevision) {
@@ -132,20 +133,38 @@ export async function cycle(input, { clientFor, save, now = Date.now }) {
   try {
     if (!connection?.credentials) throw new Error('Save separate ' + environment + ' trading credentials');
     const client = clientFor(environment, connection.credentials, connection.apiVersion ?? 'v2');
+    const selection = validateMarkets(input.marketSelection === undefined ? defaultMarkets() : input.marketSelection);
+    const enabled = new Set(selection.pairs.filter(p => p.watch && p.trade).map(p => p.symbol));
     if (journal.halted[environment]) throw new Error(journal.halted[environment]);
     if (journal.entries.some(activeEntry)) throw new Error('Managing an existing or uncertain order');
     if (journal.demoTest && (environment !== 'demo' || journal.demoTest.consumed || journal.demoTest.expiresAt < now())) throw new Error('Demo acceptance test stopped; save settings to return to strategy trading');
     if (!marketState || !Number.isFinite(marketState.updatedAt) || now() - marketState.updatedAt > 150000 || marketState.updatedAt > now() + 5000) throw new Error('Market monitor is stale');
-    for (const market of marketState.markets ?? []) {
-      if (!symbolId(market.symbol)) continue;
-      if (journal.demoTest && market.symbol !== journal.demoTest.symbol) continue;
-      const context = await client.context(symbolId(market.symbol));
+    const recordAccount = context => {
+      if (!positive(context.equity) || !Number.isFinite(context.available) || context.available < 0) throw new Error('Positive account equity required');
       journal.accounts[environment] = { equity: context.equity, available: context.available, updatedAt: now() };
-      if (!positive(context.equity)) throw new Error('Positive account equity required');
       const date = new Date(now()).toISOString().slice(0, 10);
       if (journal.days[environment]?.date !== date) journal.days[environment] = { date, equity: context.equity };
       if (context.equity <= journal.days[environment].equity * (1 - settings.dailyLossPct / 100)) throw new Error('Daily equity-loss limit reached');
-      if (!settings.armed || paused) throw new Error('New entries are stopped; position monitoring continues');
+    };
+    // Account-wide refresh has constant cost, regardless of the number of watched pairs.
+    if (client.accountSnapshot && (!journal.accounts[environment]?.updatedAt || now() - journal.accounts[environment].updatedAt >= 15000)) recordAccount(await client.accountSnapshot());
+    if (!settings.armed || paused) throw new Error('New entries are stopped; position monitoring continues');
+    const candidates = (marketState.markets ?? []).filter(m => enabled.has(m.symbol) && symbolId(m.symbol) &&
+      (journal.demoTest ? m.symbol === journal.demoTest.symbol : scanAgent(m, now()).status === 'signal'));
+    const eligible = new Set(candidates.map(m => m.symbol));
+    journal.proposals = previous.filter(p => eligible.has(p.marketSymbol) && p.revision === settings.revision &&
+      p.environment === environment && p.connectionRevision === connection.revision && p.expiresAt >= now());
+    const offset = (journal.marketCursor ?? 0) % Math.max(1, candidates.length);
+    const rotated = [...candidates.slice(offset), ...candidates.slice(0, offset)];
+    const priority = m => validCommands.some(c => ['approve', 'reject'].includes(c.action) && c.revision === settings.revision &&
+      journal.proposals.some(p => p.marketSymbol === m.symbol && p.id === c.proposalId && p.environment === c.environment));
+    rotated.sort((a, b) => Number(priority(b)) - Number(priority(a)));
+    // At most two full private preflights per cycle; approvals are checked first, others rotate fairly.
+    journal.marketCursor = candidates.length ? (offset + 2) % candidates.length : 0;
+    for (const market of rotated.slice(0, 2)) {
+      journal.proposals = journal.proposals.filter(p => p.marketSymbol !== market.symbol);
+      const context = await client.context(symbolId(market.symbol));
+      recordAccount(context); // Entry risk always uses fresh private data, never the display cache.
       let fresh;
       let evaluatedMarket = market;
       if (journal.demoTest) evaluatedMarket = { ...market, demoTestId: journal.demoTest.id, status: 'connected',
@@ -158,6 +177,7 @@ export async function cycle(input, { clientFor, save, now = Date.now }) {
       const existing = previous.find((p) => p.id === fresh.proposalId && p.expiresAt >= now());
       const proposal = existing ?? { ...fresh, entryId: fresh.id, id: fresh.proposalId };
       const command = validCommands.find((c) => c.environment === environment && c.revision === settings.revision && c.proposalId === proposal.id);
+      if (command) consumed.add(command.id);
       if (command?.action === 'reject') {
         journal.entries.push({ ...fresh, status: 'rejected', message: 'Rejected by operator' }); continue;
       }
@@ -179,7 +199,8 @@ export async function cycle(input, { clientFor, save, now = Date.now }) {
       journal.proposals = []; break;
     }
   } catch (error) { journal.message = error.message; }
-  journal.handled.push(...commands.filter((c) => !journal.handled.includes(c.id)).map((c) => c.id));
+  journal.handled.push(...commands.filter(c => !journal.handled.includes(c.id) &&
+    (consumed.has(c.id) || !['approve', 'reject'].includes(c.action) || c.expiresAt < now() || c.revision !== settings.revision)).map(c => c.id));
   journal.updatedAt = now();
   await save(journal);
   return journal;

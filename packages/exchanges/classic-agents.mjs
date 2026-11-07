@@ -72,7 +72,8 @@ export function runAgents(state, { permission = "read-only", paused = false } = 
   let remainingRisk = Math.max(0, (state.account?.equity ?? 0) * strategy.risk);
   const decisions = state.markets.map((market) => {
     const scan = scanAgent(market, now);
-    const risk = riskAgent(scan, market, state.account, state.accountStatus, paused);
+    const risk = market.trade === false ? { status: 'blocked', reason: 'Watch only · enable Trade in Markets to evaluate entries' }
+      : riskAgent(scan, market, state.account, state.accountStatus, paused);
     const size = sizerAgent(scan, risk, market, available, remainingRisk);
     const execution = executorAgent(size, market, now, permission, paused);
     if (size.status === "sized") { available -= size.notional; remainingRisk -= size.riskAmount; }

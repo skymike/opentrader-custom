@@ -1,0 +1,39 @@
+.markets-dialog { width: min(940px, calc(100vw - 32px)); max-height: 90dvh; padding: 26px; border: 1px solid #d7dfeb; border-radius: 16px; color: #24314b; background: #fff; }
+.markets-dialog::backdrop { background: #050b1988; backdrop-filter: blur(3px); }
+.markets-heading, .markets-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.markets-heading h2 { font-size: 25px; letter-spacing: -.03em; }
+.markets-dialog fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
+#markets-status { padding: 12px 14px; border-radius: 8px; background: #edf3fd; font-size: 13px; min-height: 42px; }
+#market-add { margin: 18px 0; display: flex; gap: 10px; } #market-search { flex: 1; }
+.markets-table-wrap { overflow-x: auto; max-height: 50dvh; }
+.markets-table { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
+.markets-table th { text-align: left; font-size: 11px; color: #6a7a90; padding: 10px; white-space: nowrap; position: sticky; top: 0; background: #fff; z-index: 1; }
+.markets-table td { border-top: 1px solid #e0e7f0; padding: 10px; white-space: nowrap; }
+.markets-table td:nth-child(4), .markets-table td:nth-child(5) { text-align: center; }
+.markets-table input[type=checkbox] { width: 18px; height: 18px; accent-color: #3976d4; cursor: pointer; }
+.markets-table button { padding: 6px 9px; font-size: 12px; }
+.markets-table .market-chart-link { padding: 0; background: none; color: #2863bd; font-size: 13px; }
+.markets-table small { font-size: 11px; } .markets-footnote { margin-top: 16px; }
+#chart-market { font: inherit; font-weight: 650; max-width: 190px; padding: 8px 12px; border-radius: 7px; border: 1px solid #d7dfeb; background: #fff; color: #24314b; }
+#markets { grid-template-columns: repeat(auto-fit,minmax(160px,1fr)); }
+#markets .market-price { font-size: 18px; } #markets .market-chart { display: none; }
+#markets .indicators { font-size: 10px; } #markets article { padding: 12px; }
+:root[data-theme=dark] .markets-dialog { background: #151d2c; color: #dce5f3; border-color: #34445d; }
+:root[data-theme=dark] #markets-status { background: #222f46; }
+:root[data-theme=dark] .markets-table td { border-color: #2b3950; }
+:root[data-theme=dark] .markets-table th { background: #151d2c; }
+:root[data-theme=dark] .markets-table .market-chart-link { color: #95b9ff; }
+:root[data-theme=dark] #chart-market { color: #dce5f3; background: #1e293b; border-color: #34445d; }
+@media(max-width:600px) { .markets-dialog { padding: 16px; } .markets-actions { align-items: flex-start; flex-direction: column; } .markets-table td { padding: 8px 5px; } #market-add { flex-wrap: wrap; } #open-markets { font-size: 11px; } }
+@media(max-width:600px) {
+  .markets-table thead { display: none; } .markets-table tbody { display: block; }
+  .markets-table tr { display: grid; grid-template-columns: 1fr 1fr auto; padding: 9px 0; border-bottom: 1px solid #76859b44; }
+  .markets-table td { border: 0; padding: 5px; text-align: left !important; }
+  .markets-table td:first-child { grid-column: 1 / -1; }
+  .markets-table td:nth-child(3) { grid-column: 2 / -1; }
+  .markets-table td:nth-child(2)::before { content: 'Price '; color: #7b8ba3; }
+  .markets-table td:nth-child(3)::before { content: '24h vol '; color: #7b8ba3; }
+  .markets-table td:nth-child(4)::before { content: 'Watch '; }
+  .markets-table td:nth-child(5)::before { content: 'Trade '; }
+  .markets-table input[type=checkbox] { vertical-align: middle; }
+}

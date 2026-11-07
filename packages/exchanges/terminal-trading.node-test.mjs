@@ -10,6 +10,31 @@ const adapter = await import('./terminal-bitget.mjs').catch(() => ({}));
 const engine = await import('./terminal-execution.mjs').catch(() => ({}));
 
 const now = 1800000000000;
+test('watch-only markets never reach private preflight, manual Trade pairs do, and removing a pair keeps reconciliation', async () => {
+  const f = fixture('automatic');
+  f.input.marketState.markets = [{ ...market, symbol: 'XRP/USDT:USDT' }];
+  f.input.marketSelection = { version: 1, revision: 'pairs', pairs: [{ symbol: 'XRP/USDT:USDT', watch: true, trade: false }] };
+  let reads = 0; f.client.context = async () => { reads++; return structuredClone(f.ctx); };
+  await engine.cycle(f.input, f.deps); assert.equal(reads, 0); assert.equal(f.submitted.length, 0);
+  f.input.marketSelection.pairs[0].trade = true;
+  await engine.cycle(f.input, f.deps); assert.equal(f.submitted[0]?.symbol, 'XRPUSDT');
+  f.input.marketSelection = null; f.input.marketState.markets = [];
+  let reconciled = 0; f.client.detail = async () => { reconciled++; return { state: 'canceled', baseVolume: '0' }; };
+  await engine.cycle(f.input, f.deps); assert.equal(reconciled, 1);
+});
+test('25 watched pairs with no signals make zero per-pair private requests; signal preflight is bounded and fair', async () => {
+  const f = fixture(); let reads = 0;
+  f.input.marketState.markets = Array.from({ length: 25 }, (_, i) => ({ ...market, symbol: 'C' + i + '/USDT:USDT', rsi: 50 }));
+  f.input.marketSelection = { revision: 'pairs', pairs: f.input.marketState.markets.map(m => ({ symbol: m.symbol, watch: true, trade: true })) };
+  f.client.context = async () => { reads++; return structuredClone(f.ctx); };
+  await engine.cycle(f.input, f.deps); assert.equal(reads, 0);
+  for (const m of f.input.marketState.markets) m.rsi = 20;
+  await engine.cycle(f.input, f.deps); assert.equal(reads, 2); assert.equal(f.input.journal.proposals.length, 2);
+  await engine.cycle(f.input, f.deps); assert.equal(reads, 4); assert.equal(f.input.journal.proposals.length, 4);
+  const p = f.input.journal.proposals[0];
+  f.input.commands.push({ id: 'approve-old', action: 'approve', proposalId: p.id, revision: 'r1', environment: 'demo', expiresAt: now + 60000 });
+  await engine.cycle(f.input, f.deps); assert.equal(f.submitted.length, 1); assert.equal(f.submitted[0].marketSymbol, p.marketSymbol);
+});
 const market = { symbol: 'BTC/USDT:USDT', status: 'connected', candleTime: Math.floor(now / 3600000) * 3600000 - 3600000,
   price: 100, close: 100, previousClose: 102, lower: 101, upper: 110, previousLower: 101, previousUpper: 110, rsi: 20 };
 function fixture(mode = 'approval') {

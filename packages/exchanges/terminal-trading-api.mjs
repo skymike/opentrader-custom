@@ -1,4 +1,6 @@
 import { randomUUID } from 'node:crypto';
+import { registerMarkets } from './terminal-markets-api.mjs';
+import { readMarkets } from './terminal-markets.mjs';
 import { join } from 'node:path';
 import { createTradingClient } from './terminal-exchange-router.mjs';
 import { checkConnection, withConnectionCheck } from './terminal-connection-check.mjs';
@@ -20,6 +22,7 @@ function present({ settings, connections, journal }) {
     stale: !journal.updatedAt || Date.now() - journal.updatedAt > 30000 };
 }
 export function registerTrading(app, authorize) {
+  registerMarkets(app, authorize);
   const base = '/api/terminal/trading';
   const guarded = (fn) => async (request, reply) => {
     try { return await fn(request); }
@@ -98,7 +101,7 @@ export function registerTrading(app, authorize) {
     const state = await load();
     if (state.settings.environment !== 'demo' || !state.settings.armed) fail(400, 'Enable demo entries before requesting a test trade');
     const symbol = request.body?.symbol;
-    if (!['BTC/USDT:USDT', 'SOL/USDT:USDT'].includes(symbol)) fail(400, 'Choose BTC or SOL');
+    if (!(await readMarkets()).pairs.some(pair => pair.symbol === symbol && pair.watch && pair.trade)) fail(400, 'Choose a pair enabled for Trade.');
     if (state.journal.entries.some(activeEntry)) fail(409, 'Close and reconcile the previous test first');
     state.journal.demoTest = { id: randomUUID(), symbol, createdAt: Date.now(), expiresAt: Date.now() + 300000 };
     state.journal.proposals = [];

@@ -47,6 +47,9 @@ def main():
     (release / "Dockerfile").write_text(
         f"FROM {base_image}\nCOPY app/ /app/app/\n"
         "COPY packages/exchanges/classic-monitor.mjs /app/packages/exchanges/classic-monitor.mjs\n"
+        "COPY packages/exchanges/terminal-candles.mjs /app/packages/exchanges/terminal-candles.mjs\n"
+        "COPY packages/exchanges/terminal-markets.mjs /app/packages/exchanges/terminal-markets.mjs\n"
+        "COPY packages/exchanges/terminal-market-feed.mjs /app/packages/exchanges/terminal-market-feed.mjs\n"
         "COPY packages/exchanges/classic-agents.mjs /app/packages/exchanges/classic-agents.mjs\n"
         "COPY packages/exchanges/terminal-assistant.mjs /app/packages/exchanges/terminal-assistant.mjs\n"
         "COPY packages/exchanges/terminal-trading-store.mjs /app/packages/exchanges/terminal-trading-store.mjs\n"
@@ -149,7 +152,7 @@ def main():
                     "{headers:{authorization:process.env.ADMIN_PASSWORD}});"
                     "if(!r.ok)process.exit(1);const s=await r.json();"
                     "console.log(JSON.stringify({mode:s.mode,markets:s.markets.length}));")
-                if json.loads(output).get("markets") == 2:
+                if isinstance(json.loads(output).get("markets"), int):
                     break
             except subprocess.CalledProcessError:
                 pass
@@ -160,8 +163,10 @@ def main():
             docker("stop", monitor)
             docker("rename", monitor, monitor_backup)
         docker("run", "-d", "--name", monitor, "--restart", "unless-stopped", "--env-file", str(monitor_env_path),
+               "--cpus", "0.5", "--memory", "256m", "--pids-limit", "64",
                "--mount", f"type=volume,src={volume},dst=/terminal",
                "--mount", f"type=volume,src={credentials_volume},dst=/credentials,readonly",
+               "--mount", f"type=volume,src={trading_volume},dst=/trading,readonly",
                "-e", "TERMINAL_STATE_PATH=/terminal/state.json",
                "-e", "TERMINAL_CREDENTIALS_PATH=/credentials/bitget.json",
                "-w", "/app/packages/exchanges", "--entrypoint", "node", image, "classic-monitor.mjs")

@@ -62,6 +62,11 @@ export function createBitgetV3(environment, credentials, fetcher = fetch, clock 
     });
   }
   return { request, context, positions, protection, strategies,
+    accountSnapshot: async () => {
+      const assets = await request('GET', 'account/assets');
+      const coin = list(assets.assets).find(row => row.coin === 'USDT');
+      return { equity: Number(assets.usdtEquity), available: coin ? Number(coin.available) : 0 };
+    },
     detail: async (entry, closing = false) => {
       const row = await request('GET', 'trade/order-info', { category, symbol: entry.symbol, clientOid: closing ? entry.closeId : entry.id });
       return { ...row, state: ({ cancelled: 'canceled', new: 'live' })[row.orderStatus] ?? row.orderStatus, baseVolume: row.cumExecQty, priceAvg: row.avgPrice };

@@ -210,6 +210,11 @@ for (const button of document.querySelectorAll("[data-symbol]"))
     for (const b of document.querySelectorAll("[data-symbol]")) b.setAttribute("aria-pressed", String(b === button));
     void load();
   });
+document.addEventListener('terminal-market-select', event => {
+  const selected = event.detail?.symbol;
+  if (typeof selected !== 'string' || !/^[A-Z0-9]{1,24}USDT$/.test(selected) || selected === symbol) return;
+  symbol = selected; void load();
+});
 el("chart-interval").addEventListener("change", (event) => {
   interval = event.target.value;
   void load();

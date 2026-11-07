@@ -1,8 +1,9 @@
 import { createTradingPanel } from './trading.js';
 import { createConnectionsPanel } from './connections.js';
+import { createMarketsPanel } from './markets.js';
 const element = (id) => document.getElementById(id);
 const definitions = [
-  ["Scanner", "◫", "#ae7d31", "BTC and SOL · 1 hour"],
+  ["Scanner", "◫", "#ae7d31", "Watched pairs · 1 hour"],
   ["Risk check", "△", "#ac526b", "Freshness, exposure and account limits"],
   ["Sizer", "◇", "#7962b5", "2% risk · Exchange quantity rules"],
   ["Executor", "Ⅱ", "#39876d", "Order preflight · No live submission"],
@@ -41,8 +42,8 @@ function chartPoints(values) {
     range ? 90 - 80 * (value - low) / range : 50].join(",")).join(" ");
 }
 function renderMarkets(markets) {
-  element("markets").replaceChildren(...["BTC", "SOL"].map((name) => {
-    const market = markets.find((item) => item.symbol.startsWith(name + "/"));
+  element("markets").replaceChildren(...markets.map((market) => {
+    const name = market.symbol.split('/')[0];
     const card = document.createElement("article");
     const header = document.createElement("div");
     header.className = "market-head";
@@ -56,10 +57,10 @@ function renderMarkets(markets) {
     price.className = "market-price";
     price.textContent = money(market?.price);
     const note = document.createElement("small");
-    note.textContent = "USDT perpetual · Bitget";
+    note.textContent = market.trade ? "Trade enabled · USDT perpetual" : "Watch only · USDT perpetual";
     card.append(header, price, note);
     const history = market?.history?.map((point) => point[1]) ?? [];
-    if (history.length > 1) {
+    if (history.length > 1 && markets.length <= 2) {
       const svg = document.createElementNS(svgNamespace, "svg");
       svg.setAttribute("viewBox", "0 0 600 100");
       svg.setAttribute("class", "market-chart");
@@ -145,13 +146,14 @@ function render(state) {
   }));
   if (!decisions.length) element("agent-decisions").textContent = paused ? "Agents paused. No active proposals." : "Waiting for the next agent evaluation.";
   const readiness = paused ? "Paused" : stale ? "Data delayed" : !decisions.length ? "Awaiting evaluation" : null;
-  const states = [stale ? "Data delayed" : state.markets.filter((m) => m.status === "connected").length + " / 2 markets connected",
-    readiness ?? decisions.filter((d) => d.risk.status === "passed").length + " / 2 checks passed",
+  const states = [stale ? "Data delayed" : state.markets.filter((m) => m.status === "connected").length + " / " + state.markets.length + " markets connected",
+    readiness ?? decisions.filter((d) => d.risk.status === "passed").length + " / " + decisions.length + " checks passed",
     readiness ?? decisions.filter((d) => d.size.status === "sized").length + " proposals sized",
     readiness ?? decisions.filter((d) => d.execution.status === "review").length + " ready for review · No orders",
     state.logs.length + " recorded updates", account ? "Account synchronized" : "Awaiting account connection"];
   agentStates.forEach((node, index) => { node.textContent = states[index]; });
   renderMarkets(state.markets);
+  markets.update(state);
   const history = state.equityHistory?.map((point) => point[1]) ?? [];
   element("curve").toggleAttribute("hidden", history.length < 2);
   element("chart-empty").hidden = history.length >= 2;
@@ -189,6 +191,7 @@ queueMicrotask(async () => {
   } catch { /* Retain manual login when no authenticated gateway is available. */ }
 });
 const trading = createTradingPanel(() => authorization, value => connections.updateExecution(value));
+const markets = createMarketsPanel(() => authorization, () => { void trading.refresh(); void refresh(); });
 let busy = false;
 let activeRequest;
 let connectionConfig;
@@ -209,6 +212,7 @@ function disconnect() {
   authorization = undefined;
   connections.clear();
   trading.clear();
+  markets.clear();
   clearAssistant();
   activeRequest?.abort();
   connectionConfig = undefined;
@@ -241,6 +245,7 @@ async function refresh() {
     if (authorization !== usedAuthorization || connectionGeneration !== usedGeneration) return;
     render(state);
     connections.start();
+    markets.start();
     void refreshAssistant();
     element("connect").hidden = true;
     element("disconnect").hidden = false;
@@ -337,7 +342,7 @@ function renderAssistant(data) {
   element("ai-summary").textContent = data.summary ?? "";
   element("ai-summary").hidden = !data.summary;
   element("ai-time").textContent = data.generatedAt ? "Written " + new Date(data.generatedAt).toLocaleTimeString() : "";
-  element("ai-facts").textContent = data.facts ? `${data.facts.activity.events} recorded updates in the last 15 minutes · ${data.facts.connectedMarkets} / 2 markets connected · Account ${data.facts.account}${data.facts.paused ? " · Agents paused" : ""}` : "";
+  element("ai-facts").textContent = data.facts ? `${data.facts.activity.events} recorded updates in the last 15 minutes · AI coverage: BTC & SOL (${data.facts.connectedMarkets} / 2 connected) · Account ${data.facts.account}${data.facts.paused ? " · Agents paused" : ""}` : "";
   element("ai-explanations").replaceChildren(...(data.facts?.decisions ?? []).map((decision) => {
     const section = document.createElement("section");
     const heading = document.createElement("h3");

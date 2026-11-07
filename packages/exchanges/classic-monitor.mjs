@@ -4,6 +4,9 @@ import { dirname } from "node:path";
 import { pathToFileURL } from "node:url";
 import { runAgents } from "./classic-agents.mjs";
 import { createBitgetV3 } from './terminal-bitget-v3.mjs';
+import { createMarketFeed } from './terminal-market-feed.mjs';
+import { readMarkets, catalogPath } from './terminal-markets.mjs';
+import { readJson, atomicJson } from './terminal-trading-store.mjs';
 
 const allowed = new Set(["v2/mix/account/accounts", "v2/mix/position/all-position"]);
 
@@ -19,32 +22,7 @@ export async function readClassic(exchange, endpoint) {
   return result.data;
 }
 
-export function summarizeCandles(rows, now = Date.now()) {
-  const hour = 3_600_000;
-  const latest = Math.floor(now / hour) * hour - hour;
-  const candles = rows.filter(([time]) => time <= latest);
-  if (candles.length < 21 || candles.at(-1)[0] !== latest || candles.some((row, index) =>
-    !Number.isFinite(row[4]) || row[4] <= 0 || (index && row[0] - candles[index - 1][0] !== hour))) {
-    throw new Error("Incomplete hourly candles");
-  }
-  const closes = candles.map((row) => row[4]);
-  const window = closes.slice(-20);
-  const middle = window.reduce((sum, value) => sum + value, 0) / 20;
-  const width = 2 * Math.sqrt(window.reduce((sum, value) => sum + (value - middle) ** 2, 0) / 20);
-  const prior = closes.slice(-21, -1);
-  const previousMiddle = prior.reduce((sum, value) => sum + value, 0) / 20;
-  const previousWidth = 2 * Math.sqrt(prior.reduce((sum, value) => sum + (value - previousMiddle) ** 2, 0) / 20);
-  let gain = 0;
-  let loss = 0;
-  for (let i = 1; i < closes.length; i++) {
-    const change = closes[i] - closes[i - 1];
-    gain = i <= 14 ? gain + Math.max(change, 0) / 14 : (13 * gain + Math.max(change, 0)) / 14;
-    loss = i <= 14 ? loss + Math.max(-change, 0) / 14 : (13 * loss + Math.max(-change, 0)) / 14;
-  }
-  return { lower: middle - width, middle, upper: middle + width, rsi: gain + loss ? 100 * gain / (gain + loss) : 50,
-    previousClose: closes.at(-2), previousLower: previousMiddle - previousWidth, previousUpper: previousMiddle + previousWidth,
-    candleTime: latest, close: closes.at(-1), history: candles.slice(-48).map((row) => [row[0], row[4]]) };
-}
+export { summarizeCandles } from "./terminal-candles.mjs";
 
 export async function readAccountConfig(filename) {
   try {
@@ -69,7 +47,10 @@ export async function monitor() {
   const filename = process.env.TERMINAL_STATE_PATH ?? "/app/data/terminal/state.json";
   await mkdir(dirname(filename), { recursive: true });
   const options = { enableRateLimit: true, timeout: 12_000 };
-  const pricing = new bitget(options);
+  const cachePath = filename + '.candles.json';
+  let cache = {};
+  try { cache = await readJson(cachePath, {}); } catch { /* Rebuild a damaged public-data cache. */ }
+  const pricing = createMarketFeed({ cache });
   let previous = {};
   try { previous = JSON.parse(await readFile(filename, "utf8")); } catch (error) {
     if (error.code !== "ENOENT") throw error;
@@ -91,20 +72,13 @@ export async function monitor() {
     if (config.environment === 'demo') accountClient?.setSandboxMode(true);
     const state = { updatedAt: Date.now(), mode: "classic-v2", access: "read-only", markets: [],
       connectionRevision, account: null, accountStatus: accountClient || configError ? "unavailable" : "not-connected", logs, equityHistory: history };
-    for (const symbol of ["BTC/USDT:USDT", "SOL/USDT:USDT"]) {
-      try {
-        const rows = await pricing.fetchOHLCV(symbol, "1h", undefined, 201);
-        const ticker = await pricing.fetchTicker(symbol);
-        const indicators = summarizeCandles(rows);
-        const metadata = pricing.market(symbol);
-        const rules = { amountStep: pricing.precisionMode === 4 ? metadata.precision.amount : null,
-          contractSize: metadata.contractSize, minAmount: metadata.limits.amount.min ?? 0,
-          minCost: metadata.limits.cost.min ?? 0 };
-        state.markets.push({ symbol, price: ticker.last, change: ticker.percentage, ...indicators, rules, status: "connected" });
-      } catch {
-        state.markets.push({ symbol, status: "unavailable" });
-      }
-    }
+    try {
+      const selection = await readMarkets();
+      const snapshot = await pricing.snapshot(selection.pairs);
+      state.markets = snapshot.markets; state.marketRevision = selection.revision; state.scanStats = snapshot.stats;
+      await atomicJson(catalogPath(), snapshot.catalog);
+      if (snapshot.stats.candles) await atomicJson(cachePath, pricing.cache());
+    } catch { state.marketError = 'Market scan unavailable; new entries are blocked.'; }
     if (accountClient) {
       try {
         let balances, positions;
@@ -112,7 +86,7 @@ export async function monitor() {
           const unified = createBitgetV3(config.environment ?? 'live', config.credentials);
           const assets = await unified.request('GET', 'account/assets');
           const coin = assets.assets.find((item) => item.coin === 'USDT');
-          balances = [{ marginCoin: 'USDT', usdtEquity: assets.usdtEquity, available: coin?.available }];
+          balances = [{ marginCoin: 'USDT', usdtEquity: assets.usdtEquity, available: coin?.available ?? 0 }];
           positions = await unified.positions();
         } else {
           balances = await readClassic(accountClient, "v2/mix/account/accounts");
@@ -154,7 +128,7 @@ export async function monitor() {
     await writeFile(filename + ".tmp", JSON.stringify(state), { mode: 0o600 });
     await rename(filename + ".tmp", filename);
     if (process.argv.includes("--once")) return state;
-    await new Promise((resolve) => setTimeout(resolve, 60_000));
+    await new Promise((resolve) => setTimeout(resolve, 30_000));
   }
 }
 
