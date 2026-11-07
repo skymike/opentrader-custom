@@ -1,4 +1,4 @@
-export function createTradingPanel(getAuthorization) {
+export function createTradingPanel(getAuthorization, onConnections = () => {}) {
   const el = (id) => document.getElementById(id);
   let state, busy = false, generation = 0, dirty = false, connectionInitialized = false;
   const fields = ['environment', 'mode', 'maxNotional', 'riskPct', 'dailyLossPct'];
@@ -24,6 +24,7 @@ export function createTradingPanel(getAuthorization) {
   function render() {
     if (!state) return;
     const { settings, connections, journal, stale } = state;
+    onConnections(connections);
     if (!connectionInitialized) {
       el('trade-api-version').value = connections[el('trade-key-environment').value].apiVersion;
       connectionInitialized = true;

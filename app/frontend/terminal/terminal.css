@@ -192,6 +192,10 @@ dialog::backdrop { background:#101b32a6; backdrop-filter:blur(4px); }
 .key-check.error strong { color:#b13c52; }
 .key-check.testing strong { color:#2863bd; }
 .key-check small { margin-top:3px; max-width:440px; overflow-wrap:anywhere; }
+.key-health-summary { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px; width:100%; margin-top:10px; padding:10px 14px; text-align:left; font-size:12px; }
+.key-health-summary > span:last-child { font-size:11px; font-weight:500; }
+.key-health-summary.has-errors { background:#fff0eb; color:#a33c29; }
+[data-theme="dark"] .key-health-summary.has-errors { background:#492f2b; color:#ffb9a0; }
 [data-theme="dark"] .execution-badge, [data-theme="dark"] .count-badge { background:#253d60; color:#bdd5f7; }
 [data-theme="dark"] .execution-badge.live-trading { background:#492f2b; color:#ffb9a0; }
 [data-theme="dark"] .execution-halt { background:#492f2b; color:#ffb9a0; }

@@ -25,6 +25,7 @@
         <form id="connect"><label class="sr-only" for="password">OpenTrader admin password</label><input id="password" type="password" placeholder="OpenTrader password" autocomplete="current-password" required><button id="connect-button">Connect</button></form>
         <button id="disconnect" class="secondary" hidden>Disconnect</button>
       </section>
+      <button id="open-key-health" class="key-health-summary secondary" type="button"><span id="key-health" role="status">Saved keys · Sign in to check</span><span>Manage keys →</span></button>
       <article id="trading-panel" class="trading-panel">
         <div class="execution-heading"><div><p class="eyebrow">TRADING CONTROLS</p><h2>Trade execution</h2></div><strong id="trading-badge" class="execution-badge">DEMO · Entries stopped</strong></div>
         <p id="trading-status" class="execution-status" role="status">Sign in to manage trading.</p>
@@ -100,7 +101,7 @@
   </div>
   <dialog id="settings-dialog" aria-labelledby="settings-title">
     <div class="dialog-heading"><div><p class="eyebrow">CONNECTION SETTINGS</p><h2 id="settings-title">Saved Bitget connections</h2></div><button id="close-settings" type="button" class="secondary" aria-label="Close connection settings">✕</button></div>
-    <p class="muted">Manage your saved keys and test account access. Tests only read data; they do not place orders or verify trading permission.</p>
+    <p class="muted">Saved keys are checked automatically when you connect. Results show the last check; use Test connection to retry. Checks only read account data.</p>
     <p id="settings-status" class="settings-status" role="status">Sign in to your workspace first.</p>
     <div class="section-title"><h3>Monitoring connections</h3><button id="add-connection" type="button" class="secondary" disabled>+ Add connection</button></div>
     <div id="saved-connections" class="saved-connections" aria-label="Saved monitoring keys"></div>

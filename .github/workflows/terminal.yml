@@ -23,6 +23,8 @@ jobs:
         run: node --experimental-strip-types --test packages/bot/src/terminal.node-test.mjs packages/bot/src/terminal-connections.node-test.mjs packages/bot/src/terminal-connection-check.node-test.mjs packages/bot/src/terminal-trading.node-test.mjs packages/bot/src/terminal-original.node-test.mjs packages/exchanges/classic-monitor.node-test.mjs packages/exchanges/classic-agents.node-test.mjs packages/exchanges/terminal-assistant.node-test.mjs packages/exchanges/terminal-trading.node-test.mjs packages/exchanges/terminal-v3.node-test.mjs
       - name: Build OpenTrader
         run: pnpm --filter opentrader exec tsup
+      - name: Test automatic dashboard connection checks
+        run: node --test packages/bot/src/terminal-auto-checks.node-test.mjs
       - run: python3 -m py_compile scripts/deploy-terminal.py scripts/setup-terminal-ai.py scripts/migrate-terminal-ai.py
       - run: python3 -m unittest discover -s scripts -p 'test_migrate_terminal_ai.py'
       - name: Package release

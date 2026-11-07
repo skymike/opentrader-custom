@@ -188,7 +188,7 @@ queueMicrotask(async () => {
     await refresh();
   } catch { /* Retain manual login when no authenticated gateway is available. */ }
 });
-const trading = createTradingPanel(() => authorization);
+const trading = createTradingPanel(() => authorization, value => connections.updateExecution(value));
 let busy = false;
 let activeRequest;
 let connectionConfig;
@@ -240,6 +240,7 @@ async function refresh() {
     const state = await response.json();
     if (authorization !== usedAuthorization || connectionGeneration !== usedGeneration) return;
     render(state);
+    connections.start();
     void refreshAssistant();
     element("connect").hidden = true;
     element("disconnect").hidden = false;
