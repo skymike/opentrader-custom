@@ -17,14 +17,44 @@
     </nav>
     <main>
       <header class="heading">
-        <div><p class="eyebrow">YOUR MARKET WORKSPACE</p><h1>Trading terminal<span class="dot"></span></h1><p class="muted">Two markets. Six modules. Market and account monitoring.</p></div>
-        <div class="access"><span class="pill">Read-only account access</span><p id="freshness" class="muted">Waiting for connection</p></div>
+        <div><p class="eyebrow">YOUR MARKET WORKSPACE</p><h1>Trading terminal<span class="dot"></span></h1><p class="muted">BTC and SOL. Market monitoring. Demo and live execution.</p></div>
+        <div class="access"><span class="pill">Approval or automatic trading</span><p id="freshness" class="muted">Waiting for connection</p></div>
       </header>
       <section class="connection" aria-label="Account connection">
         <div><strong id="connection-title">Connect your workspace</strong><p id="status" role="status">Use your OpenTrader password to view market and account data.</p></div>
         <form id="connect"><label class="sr-only" for="password">OpenTrader admin password</label><input id="password" type="password" placeholder="OpenTrader password" autocomplete="current-password" required><button id="connect-button">Connect</button></form>
         <button id="disconnect" class="secondary" hidden>Disconnect</button>
       </section>
+      <article id="trading-panel" class="trading-panel">
+        <div class="section-title"><h2>Trade execution</h2><strong id="trading-badge">DEMO · Entries stopped</strong></div>
+        <p id="trading-status" role="status">Sign in to manage demo and live execution.</p>
+        <p id="trade-account" class="muted"></p>
+        <fieldset id="trading-fields" disabled>
+          <legend class="sr-only">Trading controls</legend>
+          <form id="trading-form" class="trading-grid">
+            <label>Environment<select id="trade-environment"><option value="demo">Demo · Virtual funds</option><option value="live">Live · Real funds</option></select></label>
+            <label>Execution<select id="trade-mode"><option value="approval">Approve each trade</option><option value="automatic">Automatic</option></select></label>
+            <label>Maximum order (USDT)<input id="trade-maxNotional" type="number" min="5" max="10000" step="1" value="100" required></label>
+            <label>Maximum equity risk (%)<input id="trade-riskPct" type="number" min="0.1" max="2" step="0.1" value="2" required></label>
+            <label>Daily equity-loss stop (%)<input id="trade-dailyLossPct" type="number" min="0.1" max="10" step="0.1" value="3" required></label>
+            <div class="trading-actions"><button type="submit">Save settings &amp; stop entries</button><button id="trade-arm" class="secondary" type="button">Enable new entries</button><button id="trade-reset" class="secondary" type="button" hidden>Reset reviewed halt</button></div>
+          </form>
+          <p class="muted">BTC / SOL · Hourly Bollinger / RSI · One managed position · One-way, isolated, 1× margin required. Stopping entries keeps position monitoring running. Daily loss uses UTC account equity, including funding and transfers.</p>
+          <details><summary>Execution account connections</summary><p id="trade-connection-status"></p>
+            <form id="trading-connection-form" class="trading-grid">
+              <label>Key environment<select id="trade-key-environment"><option value="demo">Bitget demo key</option><option value="live">Bitget live key</option></select></label>
+              <label>API key<input id="trade-key" type="password" autocomplete="new-password" maxlength="512" required></label>
+              <label>API secret<input id="trade-secret" type="password" autocomplete="new-password" maxlength="512" required></label>
+              <label>Passphrase<input id="trade-passphrase" type="password" autocomplete="new-password" maxlength="512" required></label>
+              <div class="trading-actions"><button type="submit">Save execution key</button><button id="trade-remove-key" type="button" class="secondary">Remove selected key</button></div>
+            </form>
+            <small>Use separate Classic V2 futures API keys with trading permission. Demo keys must be created in Bitget demo mode. Withdrawals are not needed. Saving a key stops new entries.</small>
+          </details>
+          <h3>Trades awaiting approval</h3><div id="trade-proposals" class="decision-grid"></div>
+          <h3>Managed orders and positions</h3><div id="trade-orders"></div>
+        </fieldset>
+      </article>
+      <h2>Read-only monitoring account</h2><p class="muted">The account summary below uses your separate monitoring connection. Execution account details appear above.</p>
       <section class="metrics" aria-label="Account summary">
         <article><p class="label">ACCOUNT EQUITY</p><strong id="equity">—</strong><small id="equity-note">Connect a Bitget read-only key</small></article>
         <article><p class="label">AVAILABLE BALANCE</p><strong id="available">—</strong><small>USDT futures account</small></article>

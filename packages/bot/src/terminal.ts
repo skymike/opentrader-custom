@@ -3,6 +3,7 @@ import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { presentCommentary } from "../../exchanges/terminal-assistant.mjs";
+import { registerTrading } from "../../exchanges/terminal-trading-api.mjs";
 
 type Connection = { revision: string; updatedAt: number; permission: "read-only" | "read-write";
   credentials: { apiKey: string; secret: string; passphrase: string } | null };
@@ -39,6 +40,7 @@ export function registerTerminal(app: FastifyInstance) {
       return reply.code(403).send({ message: "Use the dashboard to update settings" });
     }
   }
+  registerTrading(app, authorize);
   app.get("/api/terminal/connection", { preHandler: authorize }, async (_request, reply) => {
     try { return publicConnection(await readConnection()); }
     catch { return reply.code(503).send({ message: "Connection settings are unavailable" }); }

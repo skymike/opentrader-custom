@@ -1,3 +1,4 @@
+import { createTradingPanel } from './trading.js';
 const element = (id) => document.getElementById(id);
 const definitions = [
   ["Scanner", "◫", "#ae7d31", "BTC and SOL · 1 hour"],
@@ -175,6 +176,7 @@ function render(state) {
   element("logs-empty").hidden = state.logs.length > 0;
 }
 let authorization;
+const trading = createTradingPanel(() => authorization);
 let busy = false;
 let activeRequest;
 let connectionConfig;
@@ -182,6 +184,7 @@ let lastState;
 let connectionGeneration = 0;
 function disconnect() {
   authorization = undefined;
+  trading.clear();
   clearAssistant();
   activeRequest?.abort();
   connectionConfig = undefined;
@@ -196,6 +199,7 @@ function disconnect() {
 }
 async function refresh() {
   if (!authorization || busy) return;
+  void trading.refresh();
   busy = true;
   const usedAuthorization = authorization;
   const usedGeneration = connectionGeneration;

@@ -2,6 +2,8 @@
 
 The original dashboard at `/` and terminal at `/terminal/index.html` share the existing service and administrator password.
 
+The **Trade execution** panel now supports approval and automatic modes for demo and live Classic V2 futures accounts. It is separate from the original read-only monitor described below. See [execution setup and recovery](terminal-execution.md). Demo/approval is the default and new entries start disabled. No real exchange fills have been verified by the implementation tests.
+
 The agent terminal also offers optional **Settings > AI commentary**: local LFM explanations and activity summaries, generated in the background. Risk Check, Sizer and Executor continue to run exclusively in code. See [local AI setup, limits and operations](local-ai-commentary.md).
 
 ## Connect your account
@@ -53,4 +55,4 @@ Deployment reuses the private admin password at `~/.config/opentrader-terminal/a
 
 ## Limitations
 
-No live order placement, cancellation, automatic position exits, or simulated fills. The account key has not been verified until the user saves valid credentials and the monitor reports Connected. Existing positions block new proposals because their protective orders are not inspected. Agent modules are deterministic strategy code, not LLM agents. The original dashboard's account database is separate from the terminal connection. aggr.trade opens as an external link; no aggr data is ingested.
+The original monitoring modules do not place orders or simulate fills. The separate execution panel and worker provide order submission and exits. The monitoring account key has not been verified until the user saves valid credentials and the monitor reports Connected. Existing positions block monitoring proposals because their protective orders are not inspected there. Agent modules are deterministic strategy code, not LLM agents. The original dashboard's account database is separate from the terminal connection. aggr.trade opens as an external link; no aggr data is ingested.

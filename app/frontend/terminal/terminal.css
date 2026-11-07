@@ -99,6 +99,19 @@ dialog::backdrop { background:#101b32a6; backdrop-filter:blur(4px); }
 [data-theme="dark"] .decision-grid h3, [data-theme="dark"] .decision-grid strong { color:#dce5f2; }
 @media (max-width:700px) { .decision-grid { grid-template-columns:1fr; gap:10px; } }
 .ai-card { border-top:3px solid #7962b5; scroll-margin-top:20px; }
+.trading-panel { margin:20px 0; padding:24px; border:1px solid #c8d4e3; border-radius:12px; }
+.trading-panel fieldset { border:0; padding:0; margin:0; min-width:0; }
+.trading-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(170px,1fr)); gap:14px; margin:16px 0; }
+.trading-grid label { display:flex; flex-direction:column; gap:8px; font-size:12px; }
+.trading-grid input, .trading-grid select { width:100%; min-width:0; padding:10px; border:1px solid #aebdd0; border-radius:6px; background:transparent; color:inherit; }
+.trading-grid select option { background:#fff; color:#172337; }
+.trading-actions { display:flex; gap:10px; flex-wrap:wrap; grid-column:1/-1; }
+.trading-panel h3 { margin-top:20px; }
+.trading-panel .decision-grid button { margin:12px 8px 0 0; }
+.trading-panel details { padding:12px 0; }
+#trade-orders section { border-top:1px solid #aebdd0; padding:8px 0; }
+.live-trading { color:#d94d47; }
+[data-theme="dark"] .trading-panel { border-color:#2c3b50; }
 .ai-card h2 { font-size:17px; }
 .ai-summary { font-size:15px; line-height:1.7; margin:14px 0 20px; }
 .ai-card .decision-grid section { border-radius:8px; background:#f6f8fc; padding:14px; }

@@ -36,6 +36,7 @@ def main():
     original = "opentrader-bb-rsi"
     monitor = "opentrader-classic-monitor"
     assistant = "opentrader-terminal-assistant"
+    trader = "opentrader-terminal-trader"
     prior = json.loads(docker("inspect", original))[0]
     networks = list(prior["NetworkSettings"]["Networks"])
     if networks != ["opentrader-private"] or prior["HostConfig"]["PortBindings"]:
@@ -48,12 +49,18 @@ def main():
         "COPY packages/exchanges/classic-monitor.mjs /app/packages/exchanges/classic-monitor.mjs\n"
         "COPY packages/exchanges/classic-agents.mjs /app/packages/exchanges/classic-agents.mjs\n"
         "COPY packages/exchanges/terminal-assistant.mjs /app/packages/exchanges/terminal-assistant.mjs\n"
+        "COPY packages/exchanges/terminal-trading-store.mjs /app/packages/exchanges/terminal-trading-store.mjs\n"
+        "COPY packages/exchanges/terminal-bitget.mjs /app/packages/exchanges/terminal-bitget.mjs\n"
+        "COPY packages/exchanges/terminal-execution.mjs /app/packages/exchanges/terminal-execution.mjs\n"
+        "COPY packages/exchanges/terminal-trader.mjs /app/packages/exchanges/terminal-trader.mjs\n"
         f"LABEL org.opencontainers.image.revision={args.commit}\n"
     )
     docker("build", "--network", "none", "-t", image, str(release))
     volume = "opentrader-terminal-state"
     credentials_volume = "opentrader-terminal-credentials"
     assistant_volume = "opentrader-terminal-assistant"
+    trading_volume = "opentrader-terminal-trading"
+    docker("volume", "create", trading_volume)
     docker("volume", "create", volume)
     docker("volume", "create", credentials_volume)
     docker("volume", "create", assistant_volume)
@@ -75,6 +82,8 @@ def main():
     backup = original + "-rollback-" + args.commit[:12]
     monitor_backup = monitor + "-rollback-" + args.commit[:12]
     assistant_backup = assistant + "-rollback-" + args.commit[:12]
+    trader_backup = trader + "-rollback-" + args.commit[:12]
+    existing_trader = bool(docker("ps", "-aq", "--filter", "name=^/" + trader + "$"))
     existing_assistant = bool(docker("ps", "-aq", "--filter", "name=^/" + assistant + "$"))
     existing_monitor = bool(docker("ps", "-aq", "--filter", "name=^/" + monitor + "$"))
     monitor_environment = json.loads(docker("inspect", monitor))[0]["Config"]["Env"] if existing_monitor else []
@@ -105,6 +114,9 @@ def main():
     monitor_env_path.touch(mode=0o600)
     monitor_env_path.write_text("\n".join(monitor_environment) + "\n")
     try:
+        if existing_trader:
+            docker("stop", "-t", "120", trader)
+            docker("rename", trader, trader_backup)
         docker("stop", original)
         # Database remains in the original volume. Keep a stopped predecessor for rollback.
         docker("rename", original, backup)
@@ -113,13 +125,14 @@ def main():
                "-e", "TERMINAL_STATE_PATH=/terminal/state.json",
                "-e", "TERMINAL_CREDENTIALS_PATH=/credentials/bitget.json"]
         for mount in prior["Mounts"]:
-            if mount["Destination"] in ["/terminal", "/credentials", "/assistant"]:
+            if mount["Destination"] in ["/terminal", "/credentials", "/assistant", "/trading"]:
                 continue
             suffix = "" if mount["RW"] else ",readonly"
             run += ["--mount", f"type=volume,src={mount['Name']},dst={mount['Destination']}{suffix}"]
         run += ["--mount", f"type=volume,src={volume},dst=/terminal,readonly",
                 "--mount", f"type=volume,src={credentials_volume},dst=/credentials",
                 "--mount", f"type=volume,src={assistant_volume},dst=/assistant",
+                "--mount", f"type=volume,src={trading_volume},dst=/trading",
                 "-w", "/app/app", "--entrypoint", "node", image, "dist/standalone.mjs"]
         docker(*run)
         for _ in range(20):
@@ -145,6 +158,13 @@ def main():
                "-e", "TERMINAL_STATE_PATH=/terminal/state.json",
                "-e", "TERMINAL_CREDENTIALS_PATH=/credentials/bitget.json",
                "-w", "/app/packages/exchanges", "--entrypoint", "node", image, "classic-monitor.mjs")
+        docker("run", "-d", "--name", trader, "--restart", "unless-stopped",
+               "--read-only", "--cap-drop", "ALL", "--security-opt", "no-new-privileges",
+               "--memory", "256m", "--pids-limit", "64",
+               "--mount", f"type=volume,src={volume},dst=/terminal,readonly",
+               "--mount", f"type=volume,src={credentials_volume},dst=/credentials,readonly",
+               "--mount", f"type=volume,src={trading_volume},dst=/trading",
+               "-w", "/app/packages/exchanges", "--entrypoint", "node", image, "terminal-trader.mjs")
         if existing_assistant:
             docker("stop", assistant)
             docker("rename", assistant, assistant_backup)
@@ -157,6 +177,11 @@ def main():
                "--mount", f"type=volume,src={assistant_volume},dst=/assistant",
                "-w", "/app/packages/exchanges", "--entrypoint", "node", image, "terminal-assistant.mjs")
     except Exception:
+        if docker("ps", "-aq", "--filter", "name=^/" + trader + "$"):
+            docker("rm", "-f", trader)
+        if docker("ps", "-aq", "--filter", "name=^/" + trader_backup + "$"):
+            docker("rename", trader_backup, trader)
+            docker("start", trader)
         if docker("ps", "-aq", "--filter", "name=^/" + assistant_backup + "$"):
             if docker("ps", "-aq", "--filter", "name=^/" + assistant + "$"):
                 docker("rm", "-f", assistant)
@@ -179,7 +204,7 @@ def main():
         env_path.unlink(missing_ok=True)
         monitor_env_path.unlink(missing_ok=True)
     print(json.dumps({"image": image, "rollbackContainer": backup, "commit": args.commit,
-                      "monitor": monitor,
+                      "monitor": monitor, "trader": trader,
                       "passwordFile": str(secret_file)}))
 
 
