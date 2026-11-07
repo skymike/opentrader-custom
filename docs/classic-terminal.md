@@ -2,7 +2,7 @@
 
 The original dashboard at `/` and terminal at `/terminal/index.html` share the existing service and administrator password.
 
-The **Trade execution** panel now supports approval and automatic modes for demo and live Classic V2 or Unified V3 futures accounts. It is separate from the original read-only monitor described below. See [execution setup and recovery](terminal-execution.md). Demo/approval is the default and new entries start disabled. No real exchange fills have been verified by the implementation tests.
+The **Trade execution** panel now supports approval and automatic modes for demo and live Classic V2 or Unified V3 futures accounts. It is separate from the original read-only monitor described below. See [execution setup and recovery](terminal-execution.md). Demo/approval is the default and new entries start disabled. Unified V3 demo fills and closes were verified separately in [exchange acceptance tests](demo-acceptance-2026-11-07.md).
 
 The agent terminal also offers optional **Settings > AI commentary**: local LFM explanations and activity summaries, generated in the background. Risk Check, Sizer and Executor continue to run exclusively in code. See [local AI setup, limits and operations](local-ai-commentary.md).
 
@@ -10,13 +10,17 @@ The agent terminal also offers optional **Settings > AI commentary**: local LFM 
 
 1. Sign in to the agent terminal with your OpenTrader administrator password.
 2. Open **Settings > Bitget connection**. The original dashboard also has a **Terminal & settings** menu linking here.
-3. Choose Classic V2 or Unified V3 and Demo or Live, then enter your API key, API secret and API passphrase.
+3. Select **Add connection**, give it a name, choose Classic V2 or Unified V3 and Demo or Live, then enter your API key, API secret and API passphrase.
 4. Select the permission your key has: **Read-only** or **Read-write**, then save.
 5. Account checks normally complete within 90 seconds. Balances and positions are for the selected USDT futures account.
 
 The selector records the permission you declare. It cannot change permissions on Bitget, verify all granted permissions, or enable trading. Read-only is sufficient. API errors show a connection failure instead of claiming a successful connection.
 
-To replace credentials, enter all three again. To change only the permission label, leave all three blank. Remove connection deletes the stored credentials and hides account data immediately. No credential values are returned to the browser. Use Bitget's API settings to change actual permissions or revoke a key.
+Saved monitoring connections appear as a list with API, environment and permission labels, a masked key hint, and **Edit** / **Remove** controls. Existing saved connections appear automatically. Up to 20 named monitoring connections can be stored. The first is selected automatically; adding another does not switch the displayed account. Use **Use for monitoring** to select it. Switching accounts clears the previous account snapshot until the next monitor check.
+
+To replace credentials, enter all three again. To change the name or labels, leave all three blank. Removing the selected connection hides its account data and leaves monitoring disconnected; other saved keys remain available. Secrets and full API keys are never returned to the browser. Use Bitget's API settings to change actual permissions or revoke a key.
+
+The same dialog lists saved **Execution keys** separately, with Demo/Live and V2/V3 labels. Edit opens the execution key form. Removal uses the existing execution protections: keys with managed orders or positions cannot be removed, and successful removal stops new entries. Monitoring selection never enables execution. The original dashboard's account database remains separate.
 
 ## Six working modules
 
