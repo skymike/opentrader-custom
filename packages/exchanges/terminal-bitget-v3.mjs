@@ -50,8 +50,11 @@ export function createBitgetV3(environment, credentials, fetcher = fetch, clock 
         tick: Number(rule.priceMultiplier), maxSize: rule.maxOrderQty === '' || rule.maxOrderQty === '0' ? Number.MAX_SAFE_INTEGER : Number(rule.maxOrderQty), status: rule.status === 'online' ? 'normal' : rule.status } };
   }
   async function protection(symbol) {
-    return (await strategies()).filter((r) => r.symbol === symbol && r.status === 'pending').flatMap((row) => {
-      const common = { symbol, holdSide: row.posSide, size: row.qty, orderId: row.orderId, clientOid: row.clientOid, planStatus: 'live' };
+    const [rows, settings] = await Promise.all([strategies(), request('GET', 'account/settings')]);
+    return rows.filter((r) => r.symbol === symbol && r.status === 'pending' && (!r.type || r.type === 'tpsl')).flatMap((row) => {
+      // Unified one-way TPSL reports the closing order direction, not the protected position side.
+      const holdSide = settings.holdMode === 'one_way_mode' ? ({ sell: 'long', buy: 'short' })[row.side] : row.posSide;
+      const common = { symbol, holdSide, size: row.qty, orderId: row.orderId, clientOid: row.clientOid, planStatus: 'live' };
       return [
         ...(row.stopLoss && row.slOrderType === 'market' ? [{ ...common, planType: 'loss_plan', triggerPrice: row.stopLoss, executePrice: '0' }] : []),
         ...(row.takeProfit && row.tpOrderType === 'market' ? [{ ...common, planType: 'profit_plan', triggerPrice: row.takeProfit, executePrice: '0' }] : []),
