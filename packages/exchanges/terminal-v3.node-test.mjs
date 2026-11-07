@@ -49,4 +49,6 @@ test('Unified adapter rejects invalid version environments and malformed exposur
     return { ok: true, json: async () => ({ code: '00000', data: { list: [{ symbol: 'BTCUSDT', total: null }] } }) };
   });
   await assert.rejects(client.positions());
+  assert.deepEqual(mod.normalizeUnifiedPositions({ list: null }), []);
+  assert.throws(() => mod.normalizeUnifiedPositions({}));
 });

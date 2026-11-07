@@ -6,7 +6,7 @@ const routes = { GET: new Set(['account/assets', 'account/settings', 'position/c
   POST: new Set(['trade/place-order', 'trade/cancel-order', 'trade/cancel-strategy-order']) };
 const list = (data) => { if (!Array.isArray(data)) throw new Error('Malformed Unified response'); return data; };
 export function normalizeUnifiedPositions(data) {
-  return validatePositions(list(data?.list).map((row) => ({ ...row, holdSide: row.posSide,
+  return validatePositions(list(data?.list === null ? [] : data?.list).map((row) => ({ ...row, holdSide: row.posSide,
     posMode: row.holdMode, unrealizedPL: row.unrealisedPnl })));
 }
 export function createBitgetV3(environment, credentials, fetcher = fetch, clock = Date.now) {
