@@ -4,6 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Trading Terminal · OpenTrader</title>
+  <script>try { document.documentElement.dataset.theme = localStorage.getItem("terminal-theme") || (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"); } catch {}</script>
   <link rel="stylesheet" href="./terminal.css">
   <script type="module" src="./terminal.js"></script>
 </head>
@@ -12,11 +13,11 @@
     <nav class="topbar" aria-label="Dashboard navigation">
       <a class="brand" href="/">◈ <span>OpenTrader</span></a>
       <div class="view-tabs"><a href="/">Original dashboard</a><a href="./index.html" aria-current="page">Agent terminal</a></div>
-      <span class="pill">CLASSIC V2</span>
+      <div class="toolbar"><button id="theme-toggle" class="secondary" type="button" aria-label="Switch color theme">Dark mode</button><details class="settings-menu"><summary>Settings</summary><div><button id="open-settings" class="secondary" type="button">Bitget connection</button></div></details></div>
     </nav>
     <main>
       <header class="heading">
-        <div><p class="eyebrow">YOUR MARKET WORKSPACE</p><h1>Trading terminal<span class="dot"></span></h1><p class="muted">Two markets. Six agents. Every update in view.</p></div>
+        <div><p class="eyebrow">YOUR MARKET WORKSPACE</p><h1>Trading terminal<span class="dot"></span></h1><p class="muted">Two markets. Six modules. Market and account monitoring.</p></div>
         <div class="access"><span class="pill">Read-only account access</span><p id="freshness" class="muted">Waiting for connection</p></div>
       </header>
       <section class="connection" aria-label="Account connection">
@@ -31,10 +32,11 @@
         <article><p class="label">UNREALIZED P&amp;L</p><strong id="pnl">—</strong><small>Across open positions</small></article>
       </section>
       <div class="workspace">
-        <aside><div class="section-title"><h2>Agents</h2><span>06 modules</span></div><section id="agents" class="agents"></section><div class="strategy"><h2>Strategy reference</h2><p>Bollinger 20 / 2 · RSI 14</p><p>1 hour · Completed candles</p><dl><div><dt>Risk budget</dt><dd>2%</dd></div><div><dt>Stop / target</dt><dd>2% / 4%</dd></div></dl><small>Reference settings. Execution is inactive.</small></div></aside>
+        <aside><div class="section-title"><h2>Agents</h2><span>06 implemented modules</span></div><section id="agents" class="agents"></section><div class="strategy"><h2>Strategy settings</h2><p>Bollinger 20 / 2 · RSI 14</p><p>1 hour · Completed candles</p><dl><div><dt>Risk budget</dt><dd>Up to 2%</dd></div><div><dt>Stop / target</dt><dd>2% / 4%</dd></div></dl><small>Order proposals only. No live submission.</small></div></aside>
         <div class="workspace-main">
-          <article class="flow"><div class="section-title"><h2>Execution flow</h2><span>Observation mode</span></div><div class="steps"><span>01 Scan</span><i>→</i><span>02 Check</span><i>→</i><span>03 Size</span><i>→</i><span>04 Execute</span><i>→</i><span>05 Log</span><i>→</i><span>06 Equity</span></div></article>
+          <article class="flow"><div class="section-title"><h2>Agent pipeline</h2><button id="pause-agents" type="button" class="secondary" disabled>Pause agents</button></div><div class="steps"><span>01 Scan</span><i>→</i><span>02 Check</span><i>→</i><span>03 Size</span><i>→</i><span>04 Preflight</span><i>→</i><span>05 Log</span><i>→</i><span>06 Equity</span></div><small id="agent-control-status">Order proposals only. Pausing prevents new proposals; it does not close exchange positions.</small></article>
           <section id="markets" class="market-grid" aria-label="Market overview"></section>
+          <article><div class="section-title"><h2>Agent decisions</h2><span>Live checks · No orders submitted</span></div><div id="agent-decisions" class="decision-grid"><p class="empty">Sign in to see signals, risk checks and order proposals.</p></div></article>
           <article class="chart"><div class="section-title"><h2>Equity over time</h2><span>Account samples · USDT</span></div><svg id="curve" hidden viewBox="0 0 600 100" role="img" aria-label="Account equity history"><polyline fill="none" stroke="currentColor" stroke-width="2"></polyline></svg><div id="chart-empty" class="empty">Your account's equity history will appear after connection.</div></article>
           <article><div class="section-title"><h2>Open positions</h2><span>Bitget USDT futures</span></div><div class="table-wrap"><table><thead><tr><th>Market</th><th>Side</th><th>Quantity</th><th>Unrealized P&amp;L</th></tr></thead><tbody id="positions"></tbody></table></div><p id="positions-empty" class="empty">Connect a read-only Bitget key to view positions.</p></article>
           <div class="lower-grid">
@@ -46,5 +48,27 @@
       <footer><span>OpenTrader · Classic V2</span><span id="footer-status">Account connection pending</span><a href="/">Return to original dashboard ↗</a></footer>
     </main>
   </div>
+  <dialog id="settings-dialog" aria-labelledby="settings-title">
+    <div class="dialog-heading"><div><p class="eyebrow">CONNECTION SETTINGS</p><h2 id="settings-title">Bitget Classic V2</h2></div><button id="close-settings" type="button" class="secondary" aria-label="Close connection settings">✕</button></div>
+    <p class="muted">Connect your real USDT futures account to display balances and open positions.</p>
+    <p id="settings-status" class="settings-status" role="status">Sign in to your workspace first.</p>
+    <form id="settings-form">
+      <fieldset id="settings-fields" disabled>
+        <legend class="sr-only">Bitget account credentials</legend>
+        <label for="api-key">API key</label><input id="api-key" type="password" autocomplete="new-password" maxlength="512" spellcheck="false">
+        <label for="api-secret">API secret</label><input id="api-secret" type="password" autocomplete="new-password" maxlength="512" spellcheck="false">
+        <label for="api-passphrase">API passphrase</label><input id="api-passphrase" type="password" autocomplete="new-password" maxlength="512" spellcheck="false">
+        <small id="credentials-help">Enter the three values from your Bitget API key. They are never displayed again after saving.</small>
+        <fieldset class="permission-field"><legend>API key permission</legend><div class="permission-switch">
+          <label><input type="radio" name="permission" value="read-only" checked><span>Read-only</span></label>
+          <label><input type="radio" name="permission" value="read-write"><span>Read-write</span></label>
+        </div></fieldset>
+        <p id="permission-note" class="muted">Read-only is sufficient for balances and positions.</p>
+        <div class="capability"><strong>Dashboard capability: monitoring only</strong><p>This selection records your key's permission. It does not change permissions at Bitget or activate order execution.</p></div>
+        <div class="settings-actions"><button id="save-settings" type="submit">Save connection</button><button id="remove-settings" class="secondary" type="button" hidden>Remove connection</button></div>
+      </fieldset>
+    </form>
+    <small>Credentials are stored privately on your server. Allow this server's public IP in Bitget if your key uses an IP allowlist. Never enable withdrawals for this connection.</small>
+  </dialog>
 </body>
 </html>

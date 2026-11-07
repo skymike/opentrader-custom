@@ -1,58 +1,54 @@
 # Classic V2 account terminal
 
-Two views share the existing OpenTrader service and admin password.
+The original dashboard at `/` and terminal at `/terminal/index.html` share the existing service and administrator password.
 
-- Original dashboard at /
-- Six-agent terminal at /terminal/index.html
+## Connect your account
 
-The terminal reads current BTC and SOL perpetual prices and closed hourly
-Bollinger 20/2 and RSI 14 values. Account equity, available USDT and positions
-come from Bitget Classic V2 when read-only credentials are configured.
-It has no order submission endpoint. The Sizer and Executor panels display
-their inactive state. The existing BB/RSI backtest is included in the build.
+1. Sign in to the agent terminal with your OpenTrader administrator password.
+2. Open **Settings > Bitget connection**. The original dashboard also has a **Terminal & settings** menu linking here.
+3. Enter your Bitget Classic API key, API secret and API passphrase.
+4. Select the permission your key has: **Read-only** or **Read-write**, then save.
+5. Account checks normally complete within 90 seconds. Balances and positions are for the real Classic USDT futures account.
 
-## GitHub release
+The selector records the permission you declare. It cannot change permissions on Bitget, verify all granted permissions, or enable trading. Read-only is sufficient. API errors show a connection failure instead of claiming a successful connection.
 
-The Build Classic Terminal workflow tests the account read boundary and
-protected terminal route, builds OpenTrader, and produces the
-classic-terminal-release artifact. Deploy the artifact onto the existing
-opentrader-custom:bb-rsi image so the pinned dependencies and database layout
-match the running installation. Preserve the existing container configuration,
-private network and data volume, and retain the previous container for rollback.
+To replace credentials, enter all three again. To change only the permission label, leave all three blank. Remove connection deletes the stored credentials and hides account data immediately. No credential values are returned to the browser. Use Bitget's API settings to change actual permissions or revoke a key.
 
-The public market monitor runs separately with internet access, no published
-ports, and access to a dedicated terminal state volume. Only the OpenTrader
-container serves that state, through its authenticated GET endpoint.
-Each snapshot replaces the previous one atomically.
+## Six working modules
 
-## Read-only account connection
+- Scanner calculates Bollinger 20/2 and Wilder RSI14 on completed, contiguous hourly candles. Long requires a new lower-band crossing with RSI below 30; short requires an upper-band crossing with RSI above 70. This matches the existing BB/RSI backtest's signal rules.
+- Risk Check requires fresh data, connected positive equity and available balance, no existing positions needing risk review, and no more than 1% price movement from the signal close.
+- Sizer applies a combined 2% equity risk ceiling across proposals, a 2% stop and 4% target. It rounds contract quantity down to exchange rules, respects minimum sizes, reserves 1% of remaining cash and assumes no leverage.
+- Executor validates the proposal's direction, prices, quantity and freshness, then reports ready-for-review or a blocking reason. It is a preflight executor with **no order submission transport**. Neither key-permission selection sends orders.
+- Logger records connection and agent-decision changes, keeping the latest 100 events.
+- Equity reads account balance and open positions and keeps up to 480 equity samples. Changing credentials resets the account history.
 
-Create a Classic API key with read-only permissions and store these variables
-in a file owned by the server administrator with mode 600.
+The UI shows each market's signal, risk result, sizing result and executor reason. Estimated risk excludes fees, slippage and gaps. Proposal prices are indicative, not exchange-ready submitted stop orders. No backtest result is presented as a live fill.
 
-    BITGET_API_KEY=...
-    BITGET_SECRET_KEY=...
-    BITGET_PASSPHRASE=...
+**Pause agents** persists on the server and blocks new proposals. Monitoring continues. It does not cancel orders or close existing exchange positions. The UI hides proposals immediately; the worker applies changes on its next cycle. Resume restores evaluation. Malformed control data fails closed.
 
-Pass that file only to the market monitor container with --env-file.
-Do not commit it or put the values into chat. Restart the monitor to load it.
-The monitor uses the real Classic V2 account endpoints. There is no demo header.
+## Security and storage
 
-Without credentials, market prices and indicators work and account panels
-show Account not connected. On API failures, account values become unavailable.
-The page labels snapshots older than 150 seconds as stale. The browser holds
-the admin password in memory and clears displayed account data on disconnect.
+The browser holds the admin password in memory only. Sign out or reload to clear it. Theme preference alone is saved in local storage. The light/dark button is available in the top menu.
 
-## aggr.trade
+Authenticated connection settings are written atomically with mode 600 to `/credentials/bitget.json` in the dedicated `opentrader-terminal-credentials` Docker volume. OpenTrader mounts it read-write, while the internet-connected monitor mounts it read-only. This file is protected by host permissions, not encrypted at rest. Credentials are excluded from GitHub, response bodies and application logs.
 
-An external link opens aggr.trade separately. This release has no embedded
-aggr client or data ingestion. Its live trades and liquidation feeds can be
-explored independently. Historical aggr charts need an additional data source.
+The original OpenTrader container stays on its private network. Its original Exchange Accounts form is separate and cannot access Bitget directly. Use the terminal connection settings for this integration. The monitor has internet access and no published ports. Its signed account calls are restricted to GET requests for Classic V2 account balances and positions. There is no demo header.
 
-## Administrator password
+The monitor reloads settings each cycle without a container restart. Legacy environment credentials are supported only when there is no settings file; a removed-connection record prevents them from being reused. State snapshots are atomic. Snapshots older than 150 seconds are labelled stale. Disconnected or changed-account states hide prior balances and proposals.
 
-Deployment saves the administrator password in the server owner's private
-text file at ~/.config/opentrader-terminal/admin-password.txt with mode 600.
-When the existing container has no password, it creates a random one. Both
-dashboard views require this password. The value is excluded from the GitHub
-release and application logs. A saved password is reused on subsequent runs.
+## GitHub deployment and verification
+
+The Build Classic Terminal workflow on `terminal/classic-dashboard` runs account security, agent and indicator tests, builds OpenTrader with pinned Node/pnpm versions, and creates `classic-terminal-release`.
+
+Deploy its `terminal-release.tar.gz` using `python3 deploy-terminal.py <archive> <full-commit-sha>` on the existing server. The script builds on the deployed image, preserves the database and private network, checks public markets in an isolated temporary volume, and retains stopped predecessor containers for rollback. Monitor settings and its legacy environment are preserved on upgrade.
+
+Focused tests:
+
+    node --experimental-strip-types --test packages/bot/src/terminal.node-test.mjs packages/exchanges/classic-monitor.node-test.mjs packages/exchanges/classic-agents.node-test.mjs
+
+Deployment reuses the private admin password at `~/.config/opentrader-terminal/admin-password.txt` with mode 600. Both views require it.
+
+## Limitations
+
+No live order placement, cancellation, automatic position exits, or simulated fills. The account key has not been verified until the user saves valid credentials and the monitor reports Connected. Existing positions block new proposals because their protective orders are not inspected. Agent modules are deterministic strategy code, not LLM agents. The original dashboard's account database is separate from the terminal connection. aggr.trade opens as an external link; no aggr data is ingested.

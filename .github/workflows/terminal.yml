@@ -20,7 +20,7 @@ jobs:
       - run: pnpm install --lockfile --frozen-lockfile
       - run: pnpm --filter @opentrader/prisma exec prisma generate --schema src/schema.prisma
       - name: Test terminal and read-only account boundary
-        run: node --experimental-strip-types --test packages/bot/src/terminal.node-test.mjs packages/exchanges/classic-monitor.node-test.mjs
+        run: node --experimental-strip-types --test packages/bot/src/terminal.node-test.mjs packages/exchanges/classic-monitor.node-test.mjs packages/exchanges/classic-agents.node-test.mjs
       - name: Build OpenTrader
         run: pnpm --filter opentrader exec tsup
       - run: python3 -m py_compile scripts/deploy-terminal.py
@@ -32,6 +32,7 @@ jobs:
           cp app/frontend/assets/index-DTKnr6h1.js release/app/frontend/assets/
           cp app/frontend/terminal/* release/app/frontend/terminal/
           cp packages/exchanges/classic-monitor.mjs release/packages/exchanges/
+          cp packages/exchanges/classic-agents.mjs release/packages/exchanges/
           printf '%s\n' "$GITHUB_SHA" > release/COMMIT
           tar -czf terminal-release.tar.gz -C release .
           cp scripts/deploy-terminal.py deploy-terminal.py

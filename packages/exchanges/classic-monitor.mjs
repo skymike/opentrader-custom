@@ -2,6 +2,7 @@ import { bitget } from "ccxt";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { pathToFileURL } from "node:url";
+import { runAgents } from "./classic-agents.mjs";
 
 const allowed = new Set(["v2/mix/account/accounts", "v2/mix/position/all-position"]);
 
@@ -29,6 +30,9 @@ export function summarizeCandles(rows, now = Date.now()) {
   const window = closes.slice(-20);
   const middle = window.reduce((sum, value) => sum + value, 0) / 20;
   const width = 2 * Math.sqrt(window.reduce((sum, value) => sum + (value - middle) ** 2, 0) / 20);
+  const prior = closes.slice(-21, -1);
+  const previousMiddle = prior.reduce((sum, value) => sum + value, 0) / 20;
+  const previousWidth = 2 * Math.sqrt(prior.reduce((sum, value) => sum + (value - previousMiddle) ** 2, 0) / 20);
   let gain = 0;
   let loss = 0;
   for (let i = 1; i < closes.length; i++) {
@@ -37,7 +41,26 @@ export function summarizeCandles(rows, now = Date.now()) {
     loss = i <= 14 ? loss + Math.max(-change, 0) / 14 : (13 * loss + Math.max(-change, 0)) / 14;
   }
   return { lower: middle - width, middle, upper: middle + width, rsi: gain + loss ? 100 * gain / (gain + loss) : 50,
+    previousClose: closes.at(-2), previousLower: previousMiddle - previousWidth, previousUpper: previousMiddle + previousWidth,
     candleTime: latest, close: closes.at(-1), history: candles.slice(-48).map((row) => [row[0], row[4]]) };
+}
+
+export async function readAccountConfig(filename) {
+  try {
+    const config = JSON.parse(await readFile(filename, "utf8"));
+    if (typeof config.revision !== "string" || !["read-only", "read-write"].includes(config.permission) ||
+        (config.credentials !== null && !["apiKey", "secret", "passphrase"].every((key) =>
+          typeof config.credentials?.[key] === "string" && config.credentials[key].length > 0))) {
+      throw new Error("Invalid connection settings");
+    }
+    return config;
+  } catch (error) {
+    if (error.code !== "ENOENT") throw new Error("Connection settings unavailable");
+    const { BITGET_API_KEY, BITGET_SECRET_KEY, BITGET_PASSPHRASE } = process.env;
+    return { revision: null, permission: "read-only", credentials:
+      BITGET_API_KEY && BITGET_SECRET_KEY && BITGET_PASSPHRASE
+        ? { apiKey: BITGET_API_KEY, secret: BITGET_SECRET_KEY, passphrase: BITGET_PASSPHRASE } : null };
+  }
 }
 
 export async function monitor() {
@@ -45,25 +68,36 @@ export async function monitor() {
   await mkdir(dirname(filename), { recursive: true });
   const options = { enableRateLimit: true, timeout: 12_000 };
   const pricing = new bitget(options);
-  const { BITGET_API_KEY, BITGET_SECRET_KEY, BITGET_PASSPHRASE } = process.env;
-  const accountClient = BITGET_API_KEY && BITGET_SECRET_KEY && BITGET_PASSPHRASE
-    ? new bitget({ ...options, apiKey: BITGET_API_KEY, secret: BITGET_SECRET_KEY, password: BITGET_PASSPHRASE }) : null;
   let previous = {};
   try { previous = JSON.parse(await readFile(filename, "utf8")); } catch (error) {
     if (error.code !== "ENOENT") throw error;
   }
   const logs = previous.logs ?? [];
   const history = previous.equityHistory ?? [];
+  let connectionRevision = previous.connectionRevision;
   let lastStatus;
+  let lastDecision;
   while (true) {
+    let config;
+    let configError = false;
+    try { config = await readAccountConfig(process.env.TERMINAL_CREDENTIALS_PATH ?? "/app/data/terminal/bitget.json"); }
+    catch { configError = true; config = { revision: null, credentials: null }; }
+    if (config.revision !== connectionRevision || configError) history.length = 0;
+    connectionRevision = config.revision;
+    const accountClient = config.credentials ? new bitget({ ...options, apiKey: config.credentials.apiKey,
+      secret: config.credentials.secret, password: config.credentials.passphrase }) : null;
     const state = { updatedAt: Date.now(), mode: "classic-v2", access: "read-only", markets: [],
-      account: null, accountStatus: accountClient ? "unavailable" : "not-connected", logs, equityHistory: history };
+      connectionRevision, account: null, accountStatus: accountClient || configError ? "unavailable" : "not-connected", logs, equityHistory: history };
     for (const symbol of ["BTC/USDT:USDT", "SOL/USDT:USDT"]) {
       try {
         const rows = await pricing.fetchOHLCV(symbol, "1h", undefined, 201);
         const ticker = await pricing.fetchTicker(symbol);
         const indicators = summarizeCandles(rows);
-        state.markets.push({ symbol, price: ticker.last, change: ticker.percentage, ...indicators, status: "connected" });
+        const metadata = pricing.market(symbol);
+        const rules = { amountStep: pricing.precisionMode === 4 ? metadata.precision.amount : null,
+          contractSize: metadata.contractSize, minAmount: metadata.limits.amount.min ?? 0,
+          minCost: metadata.limits.cost.min ?? 0 };
+        state.markets.push({ symbol, price: ticker.last, change: ticker.percentage, ...indicators, rules, status: "connected" });
       } catch {
         state.markets.push({ symbol, status: "unavailable" });
       }
@@ -84,13 +118,26 @@ export async function monitor() {
         if (history.length > 480) history.shift();
       } catch { state.accountStatus = "unavailable"; }
     }
+    let paused = false;
+    try {
+      const controls = JSON.parse(await readFile(process.env.TERMINAL_CONTROL_PATH ?? "/credentials/control.json", "utf8"));
+      paused = controls.paused !== false;
+    } catch (error) { if (error.code !== "ENOENT") paused = true; }
+    state.agents = runAgents(state, { permission: config.permission, paused });
+    const decision = JSON.stringify(state.agents.decisions.map((item) =>
+      [item.symbol, item.scan.status, item.risk.reason, item.size.status, item.execution.reason]));
+    if (decision !== lastDecision) {
+      for (const item of state.agents.decisions) logs.push({ time: Date.now(), message:
+        `${item.symbol.split(":")[0]} · Risk: ${item.risk.status} · ${item.execution.reason}` });
+      lastDecision = decision;
+    }
     const status = state.markets.map((m) => m.symbol.split("/")[0] + " " + m.status).join(" · ") +
       " · Account " + state.accountStatus;
     if (status !== lastStatus) {
       logs.push({ time: Date.now(), message: status });
-      if (logs.length > 100) logs.shift();
       lastStatus = status;
     }
+    if (logs.length > 100) logs.splice(0, logs.length - 100);
     state.updatedAt = Date.now();
     await writeFile(filename + ".tmp", JSON.stringify(state), { mode: 0o600 });
     await rename(filename + ".tmp", filename);

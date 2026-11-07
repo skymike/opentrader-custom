@@ -44,23 +44,29 @@ def main():
     (release / "Dockerfile").write_text(
         f"FROM {base_image}\nCOPY app/ /app/app/\n"
         "COPY packages/exchanges/classic-monitor.mjs /app/packages/exchanges/classic-monitor.mjs\n"
+        "COPY packages/exchanges/classic-agents.mjs /app/packages/exchanges/classic-agents.mjs\n"
         f"LABEL org.opencontainers.image.revision={args.commit}\n"
     )
     docker("build", "--network", "none", "-t", image, str(release))
     volume = "opentrader-terminal-state"
+    credentials_volume = "opentrader-terminal-credentials"
     docker("volume", "create", volume)
-    # Run the public market collector once before replacing the app.
-    docker("run", "--rm", "--mount", f"type=volume,src={volume},dst=/terminal",
+    docker("volume", "create", credentials_volume)
+    # Check public markets without overwriting the running account snapshot.
+    snapshot = json.loads(docker("run", "--rm", "--tmpfs", "/terminal",
            "-e", "TERMINAL_STATE_PATH=/terminal/state.json", "-w", "/app/packages/exchanges",
-           "--entrypoint", "node", image, "classic-monitor.mjs", "--once")
-    snapshot = json.loads(docker("run", "--rm", "--network", "none",
-        "--mount", f"type=volume,src={volume},dst=/terminal,readonly",
-        "--entrypoint", "cat", image, "/terminal/state.json"))
+           "--entrypoint", "node", image, "--input-type=module", "-e",
+           "import {monitor} from './classic-monitor.mjs';process.argv.push('--once');"
+           "const s=await monitor();console.log(JSON.stringify({markets:s.markets.map(m=>({status:m.status}))}));"))
     if len(snapshot["markets"]) != 2 or not all(market["status"] == "connected" for market in snapshot["markets"]):
         raise RuntimeError("Public market checks failed. Existing app is still running.")
     backup = original + "-rollback-" + args.commit[:12]
-    if docker("ps", "-aq", "--filter", "name=^/" + monitor + "$"):
-        raise RuntimeError("A monitor already exists. Review its credentials before replacing it.")
+    monitor_backup = monitor + "-rollback-" + args.commit[:12]
+    existing_monitor = bool(docker("ps", "-aq", "--filter", "name=^/" + monitor + "$"))
+    monitor_environment = json.loads(docker("inspect", monitor))[0]["Config"]["Env"] if existing_monitor else []
+    for mount in prior["Mounts"]:
+        if mount["Type"] != "volume":
+            raise ValueError("Unexpected existing mount")
     environment = prior["Config"]["Env"]
     configured_password = next((value.split("=", 1)[1] for value in environment
                                 if value.startswith("ADMIN_PASSWORD=")), "")
@@ -81,18 +87,24 @@ def main():
     env_path = release / "app.env"
     env_path.touch(mode=0o600)
     env_path.write_text("\n".join(environment) + "\n")
+    monitor_env_path = release / "monitor.env"
+    monitor_env_path.touch(mode=0o600)
+    monitor_env_path.write_text("\n".join(monitor_environment) + "\n")
     try:
         docker("stop", original)
         # Database remains in the original volume. Keep a stopped predecessor for rollback.
         docker("rename", original, backup)
         run = ["run", "-d", "--name", original, "--restart", "unless-stopped",
                "--network", networks[0], "--env-file", str(env_path),
-               "-e", "TERMINAL_STATE_PATH=/terminal/state.json"]
+               "-e", "TERMINAL_STATE_PATH=/terminal/state.json",
+               "-e", "TERMINAL_CREDENTIALS_PATH=/credentials/bitget.json"]
         for mount in prior["Mounts"]:
-            if mount["Type"] != "volume":
-                raise ValueError("Unexpected existing mount")
-            run += ["--mount", f"type=volume,src={mount['Name']},dst={mount['Destination']}"]
+            if mount["Destination"] in ["/terminal", "/credentials"]:
+                continue
+            suffix = "" if mount["RW"] else ",readonly"
+            run += ["--mount", f"type=volume,src={mount['Name']},dst={mount['Destination']}{suffix}"]
         run += ["--mount", f"type=volume,src={volume},dst=/terminal,readonly",
+                "--mount", f"type=volume,src={credentials_volume},dst=/credentials",
                 "-w", "/app/app", "--entrypoint", "node", image, "dist/standalone.mjs"]
         docker(*run)
         for _ in range(20):
@@ -109,11 +121,21 @@ def main():
             time.sleep(1)
         else:
             raise RuntimeError("New app health check failed")
-        docker("run", "-d", "--name", monitor, "--restart", "unless-stopped",
+        if existing_monitor:
+            docker("stop", monitor)
+            docker("rename", monitor, monitor_backup)
+        docker("run", "-d", "--name", monitor, "--restart", "unless-stopped", "--env-file", str(monitor_env_path),
                "--mount", f"type=volume,src={volume},dst=/terminal",
+               "--mount", f"type=volume,src={credentials_volume},dst=/credentials,readonly",
                "-e", "TERMINAL_STATE_PATH=/terminal/state.json",
+               "-e", "TERMINAL_CREDENTIALS_PATH=/credentials/bitget.json",
                "-w", "/app/packages/exchanges", "--entrypoint", "node", image, "classic-monitor.mjs")
     except Exception:
+        if docker("ps", "-aq", "--filter", "name=^/" + monitor_backup + "$"):
+            if docker("ps", "-aq", "--filter", "name=^/" + monitor + "$"):
+                docker("rm", "-f", monitor)
+            docker("rename", monitor_backup, monitor)
+            docker("start", monitor)
         if docker("ps", "-aq", "--filter", "name=^/" + backup + "$"):
             if docker("ps", "-aq", "--filter", "name=^/" + original + "$"):
                 docker("rm", "-f", original)
@@ -122,8 +144,9 @@ def main():
         raise
     finally:
         env_path.unlink(missing_ok=True)
+        monitor_env_path.unlink(missing_ok=True)
     print(json.dumps({"image": image, "rollbackContainer": backup, "commit": args.commit,
-                      "account": "not-connected", "monitor": monitor,
+                      "monitor": monitor,
                       "passwordFile": str(secret_file)}))
 
 

@@ -1,17 +1,21 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { mkdtemp, writeFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, writeFile, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import Fastify from "fastify";
 import { registerTerminal } from "./terminal.ts";
 
-test("terminal protects account data and rejects mutations", async () => {
+test("terminal protects account data and securely manages connection settings", async () => {
   const directory = await mkdtemp(join(tmpdir(), "classic-terminal-"));
   const oldPassword = process.env.ADMIN_PASSWORD;
   const oldPath = process.env.TERMINAL_STATE_PATH;
+  const oldCredentialsPath = process.env.TERMINAL_CREDENTIALS_PATH;
+  const oldControlPath = process.env.TERMINAL_CONTROL_PATH;
   process.env.ADMIN_PASSWORD = "test-password";
   process.env.TERMINAL_STATE_PATH = join(directory, "state.json");
+  process.env.TERMINAL_CREDENTIALS_PATH = join(directory, "credentials", "bitget.json");
+  process.env.TERMINAL_CONTROL_PATH = join(directory, "credentials", "control.json");
   const app = Fastify();
   registerTerminal(app);
   try {
@@ -26,10 +30,52 @@ test("terminal protects account data and rejects mutations", async () => {
     assert.equal(response.json().account.equity, 10);
     await writeFile(process.env.TERMINAL_STATE_PATH, "{bad");
     assert.equal((await app.inject({ url: "/api/terminal/state", headers })).statusCode, 503);
+    const url = "/api/terminal/connection";
+    const payload = { apiKey: "fixture-key", secret: "fixture-secret", passphrase: "fixture-passphrase", permission: "read-write" };
+    for (const method of ["GET", "PUT", "DELETE"]) {
+      assert.equal((await app.inject({ url, method, ...(method === "PUT" ? { payload } : {}) })).statusCode, 401);
+    }
+    assert.equal((await app.inject({ url, method: "PUT", headers: { ...headers, origin: "https://untrusted.example" }, payload })).statusCode, 403);
+    assert.equal((await app.inject({ url, method: "PUT", headers, payload: { ...payload, secret: "" } })).statusCode, 400);
+    const saved = await app.inject({ url, method: "PUT", headers, payload });
+    assert.equal(saved.statusCode, 200);
+    assert.equal(saved.json().capability, "monitoring-only");
+    assert.equal(saved.json().permission, "read-write");
+    for (const value of [payload.apiKey, payload.secret, payload.passphrase]) assert.ok(!saved.body.includes(value));
+    const config = JSON.parse(await readFile(process.env.TERMINAL_CREDENTIALS_PATH, "utf8"));
+    assert.equal(config.credentials.secret, payload.secret);
+    if (process.platform !== "win32") assert.equal((await stat(process.env.TERMINAL_CREDENTIALS_PATH)).mode & 0o777, 0o600);
+    const fetched = await app.inject({ url, headers });
+    assert.equal(fetched.headers["cache-control"], "no-store");
+    assert.equal(fetched.json().configured, true);
+    assert.ok(!fetched.body.includes("fixture"));
+    await writeFile(process.env.TERMINAL_STATE_PATH, JSON.stringify({ account: { equity: 10 }, equityHistory: [[1, 10]] }));
+    const pending = (await app.inject({ url: "/api/terminal/state", headers })).json();
+    assert.equal(pending.account, null);
+    assert.equal(pending.accountStatus, "validating");
+    assert.deepEqual(pending.equityHistory, []);
+    await writeFile(process.env.TERMINAL_STATE_PATH, JSON.stringify({ connectionRevision: config.revision, account: { equity: 12 } }));
+    assert.equal((await app.inject({ url: "/api/terminal/state", headers })).json().account.equity, 12);
+    assert.equal((await app.inject({ url, method: "PUT", headers, payload: { permission: "read-only" } })).statusCode, 200);
+    assert.equal(JSON.parse(await readFile(process.env.TERMINAL_CREDENTIALS_PATH, "utf8")).credentials.secret, payload.secret);
+    assert.equal((await app.inject({ url, method: "DELETE", headers })).json().configured, false);
+    assert.equal(JSON.parse(await readFile(process.env.TERMINAL_CREDENTIALS_PATH, "utf8")).credentials, null);
+    assert.equal((await app.inject({ url: "/api/terminal/state", headers })).json().account, null);
+    assert.equal((await app.inject({ url, method: "PUT", headers, payload: { permission: "read-only" } })).statusCode, 400);
+    const control = "/api/terminal/control";
+    assert.equal((await app.inject({ url: control, method: "PUT", payload: { paused: true } })).statusCode, 401);
+    assert.equal((await app.inject({ url: control, method: "PUT", headers, payload: { paused: "false" } })).statusCode, 400);
+    assert.equal((await app.inject({ url: control, method: "PUT", headers, payload: { paused: true } })).json().paused, true);
+    const paused = (await app.inject({ url: "/api/terminal/state", headers })).json();
+    assert.equal(paused.control.paused, true);
+    assert.equal(paused.agents, null);
+    assert.equal((await app.inject({ url: control, method: "PUT", headers, payload: { paused: false } })).json().paused, false);
   } finally {
     await app.close();
     if (oldPassword === undefined) delete process.env.ADMIN_PASSWORD; else process.env.ADMIN_PASSWORD = oldPassword;
     if (oldPath === undefined) delete process.env.TERMINAL_STATE_PATH; else process.env.TERMINAL_STATE_PATH = oldPath;
+    if (oldCredentialsPath === undefined) delete process.env.TERMINAL_CREDENTIALS_PATH; else process.env.TERMINAL_CREDENTIALS_PATH = oldCredentialsPath;
+    if (oldControlPath === undefined) delete process.env.TERMINAL_CONTROL_PATH; else process.env.TERMINAL_CONTROL_PATH = oldControlPath;
     await rm(directory, { recursive: true, force: true });
   }
 });

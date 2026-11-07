@@ -1,10 +1,10 @@
 const element = (id) => document.getElementById(id);
 const definitions = [
   ["Scanner", "◫", "#ae7d31", "BTC and SOL · 1 hour"],
-  ["Risk check", "△", "#ac526b", "Account and position visibility"],
-  ["Sizer", "◇", "#7962b5", "2% risk reference"],
-  ["Executor", "Ⅱ", "#39876d", "Order execution inactive"],
-  ["Logger", "▤", "#b17f3b", "Connection and data events"],
+  ["Risk check", "△", "#ac526b", "Freshness, exposure and account limits"],
+  ["Sizer", "◇", "#7962b5", "2% risk · Exchange quantity rules"],
+  ["Executor", "Ⅱ", "#39876d", "Order preflight · No live submission"],
+  ["Logger", "▤", "#b17f3b", "Decisions and connection events"],
   ["Equity", "◈", "#3c73b8", "Classic USDT account"],
 ];
 const agentStates = definitions.map(([name, icon, color, description]) => {
@@ -87,6 +87,7 @@ function renderMarkets(markets) {
   }));
 }
 function render(state) {
+  lastState = state;
   const stale = !state.updatedAt || Date.now() - state.updatedAt > 150_000;
   const account = state.account;
   element("freshness").textContent = state.updatedAt
@@ -95,8 +96,16 @@ function render(state) {
     ? "Bitget Classic account connected" : state.accountStatus === "unavailable" ? "Account connection unavailable" : "Market data connected · Account not connected";
   element("status").textContent = stale ? "Data is delayed. Check the market monitor connection." :
     state.accountStatus === "connected" ? "Balances and positions refresh automatically. Account access is read-only." :
-    state.accountStatus === "unavailable" ? "Check the read-only API key and account permissions on the server." :
-    "Add a Bitget Classic read-only API key on the server to display balances and positions.";
+    state.accountStatus === "unavailable" ? "Open Settings → Bitget connection to check your credentials, permissions and IP allowlist." :
+    state.accountStatus === "validating" ? "Connection saved. Waiting for the next account check, usually within 90 seconds." :
+    "Open Settings → Bitget connection to add your API key, secret and passphrase.";
+  if (state.connection) {
+    connectionConfig = state.connection;
+    element("settings-status").textContent = state.accountStatus === "connected" ? "Connected · Balances and positions are updating." :
+      state.accountStatus === "validating" ? "Saved · Waiting for the next account check (up to 90 seconds)." :
+      state.accountStatus === "unavailable" ? "Unable to connect. Check all three credentials, futures read permissions and your Bitget IP allowlist." :
+      "No account connected. Add your Bitget credentials below.";
+  }
   element("equity").textContent = money(account?.equity);
   element("available").textContent = money(account?.available);
   element("count").textContent = account ? account.positions.length : "—";
@@ -104,9 +113,40 @@ function render(state) {
   element("pnl").textContent = money(pnl);
   element("equity-note").textContent = account ? "USDT · Real account" : "Account connection pending";
   element("footer-status").textContent = stale ? "Market data delayed" : "Market monitor online";
+  const decisions = state.agents?.decisions ?? [];
+  const paused = state.control?.paused ?? state.agents?.paused ?? false;
+  element("pause-agents").textContent = paused ? "Resume agents" : "Pause agents";
+  element("pause-agents").disabled = !authorization;
+  element("agent-control-status").textContent = paused ? "Agents paused. Market and account monitoring continue. Existing exchange positions are unchanged."
+    : "Order proposals only. Pausing prevents new proposals; it does not close exchange positions.";
+  element("agent-decisions").replaceChildren(...decisions.map((decision) => {
+    const card = document.createElement("section");
+    const heading = document.createElement("h3");
+    heading.textContent = decision.symbol.split(":")[0];
+    card.append(heading);
+    for (const [label, result] of [["Signal", decision.scan], ["Risk", decision.risk], ["Size", decision.size], ["Executor", decision.execution]]) {
+      const line = document.createElement("p");
+      const name = document.createElement("strong");
+      name.textContent = label + " · " + result.status;
+      line.append(name, document.createElement("br"), document.createTextNode(result.reason));
+      card.append(line);
+    }
+    if (decision.size.status === "sized") {
+      const plan = decision.size;
+      const detail = document.createElement("p");
+      detail.className = "proposal";
+      detail.textContent = `${plan.side.toUpperCase()} ${format(plan.quantity, 6)} · Entry ${money(plan.entry)} · SL ${money(plan.stop)} · TP ${money(plan.target)} · Estimated stop risk ${money(plan.riskAmount)} before fees/slippage`;
+      card.append(detail);
+    }
+    return card;
+  }));
+  if (!decisions.length) element("agent-decisions").textContent = paused ? "Agents paused. No active proposals." : "Waiting for the next agent evaluation.";
+  const readiness = paused ? "Paused" : stale ? "Data delayed" : !decisions.length ? "Awaiting evaluation" : null;
   const states = [stale ? "Data delayed" : state.markets.filter((m) => m.status === "connected").length + " / 2 markets connected",
-    account ? account.positions.length + " open positions" : "Awaiting account connection",
-    "Reference only", "Inactive · Read-only", state.logs.length + " recorded updates", account ? "Account synchronized" : "Awaiting account connection"];
+    readiness ?? decisions.filter((d) => d.risk.status === "passed").length + " / 2 checks passed",
+    readiness ?? decisions.filter((d) => d.size.status === "sized").length + " proposals sized",
+    readiness ?? decisions.filter((d) => d.execution.status === "review").length + " ready for review · No orders",
+    state.logs.length + " recorded updates", account ? "Account synchronized" : "Awaiting account connection"];
   agentStates.forEach((node, index) => { node.textContent = states[index]; });
   renderMarkets(state.markets);
   const history = state.equityHistory?.map((point) => point[1]) ?? [];
@@ -137,9 +177,16 @@ function render(state) {
 let authorization;
 let busy = false;
 let activeRequest;
+let connectionConfig;
+let lastState;
+let connectionGeneration = 0;
 function disconnect() {
   authorization = undefined;
   activeRequest?.abort();
+  connectionConfig = undefined;
+  element("settings-form").reset();
+  element("settings-fields").disabled = true;
+  element("settings-status").textContent = "Sign in to your workspace first.";
   element("connect").hidden = false;
   element("disconnect").hidden = true;
   render({ updatedAt: null, account: null, accountStatus: "not-connected", markets: [], logs: [] });
@@ -150,6 +197,7 @@ async function refresh() {
   if (!authorization || busy) return;
   busy = true;
   const usedAuthorization = authorization;
+  const usedGeneration = connectionGeneration;
   element("connect-button").disabled = true;
   activeRequest = new AbortController();
   const timeout = setTimeout(() => activeRequest?.abort(), 15_000);
@@ -161,10 +209,11 @@ async function refresh() {
     }
     if (!response.ok) throw new Error("The market monitor is unavailable. Retrying shortly.");
     const state = await response.json();
-    if (authorization !== usedAuthorization) return;
+    if (authorization !== usedAuthorization || connectionGeneration !== usedGeneration) return;
     render(state);
     element("connect").hidden = true;
     element("disconnect").hidden = false;
+    if (!savingSettings) element("settings-fields").disabled = false;
   } catch (error) {
     if (authorization || error.message.startsWith("Password")) {
       element("status").textContent = error.name === "AbortError" ? "Connection timed out. Retrying shortly." : error.message;
@@ -185,3 +234,91 @@ element("connect").addEventListener("submit", (event) => {
 element("disconnect").addEventListener("click", disconnect);
 renderMarkets([]);
 setInterval(() => void refresh(), 10_000);
+
+let savingSettings = false;
+function updateTheme() {
+  const dark = document.documentElement.dataset.theme === "dark";
+  element("theme-toggle").textContent = dark ? "☀ Light mode" : "☾ Dark mode";
+  element("theme-toggle").setAttribute("aria-label", dark ? "Switch to light mode" : "Switch to dark mode");
+}
+element("theme-toggle").addEventListener("click", () => {
+  const theme = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
+  document.documentElement.dataset.theme = theme;
+  try { localStorage.setItem("terminal-theme", theme); } catch { /* The toggle still works with storage disabled. */ }
+  updateTheme();
+});
+updateTheme();
+function updatePermission() {
+  element("permission-note").textContent = element("settings-form").elements.permission.value === "read-write"
+    ? "Read-write declared. This dashboard still only reads your account; it cannot place or cancel orders."
+    : "Read-only is sufficient for balances and positions.";
+}
+element("settings-form").addEventListener("change", updatePermission);
+function openSettings() {
+  document.querySelector(".settings-menu").open = false;
+  element("settings-form").reset();
+  element("settings-form").elements.permission.value = connectionConfig?.permission ?? "read-only";
+  element("remove-settings").hidden = !connectionConfig?.configured;
+  element("credentials-help").textContent = connectionConfig?.configured
+    ? "Credentials are saved securely. Leave all three blank to keep them, or enter all three to replace them."
+    : "Enter the three values from your Bitget API key. They are never displayed again after saving.";
+  updatePermission();
+  element("settings-fields").disabled = !authorization || savingSettings;
+  element("settings-dialog").showModal();
+}
+element("open-settings").addEventListener("click", openSettings);
+element("close-settings").addEventListener("click", () => element("settings-dialog").close());
+element("settings-dialog").addEventListener("close", () => {
+  element("settings-form").reset();
+  if (location.hash === "#settings") history.replaceState(null, "", location.pathname);
+});
+async function saveSettings(remove = false) {
+  if (!authorization || savingSettings) return;
+  const usedAuthorization = authorization;
+  savingSettings = true;
+  const body = { apiKey: element("api-key").value, secret: element("api-secret").value,
+    passphrase: element("api-passphrase").value, permission: element("settings-form").elements.permission.value };
+  element("settings-fields").disabled = true;
+  element("settings-status").textContent = remove ? "Removing connection…" : "Saving connection…";
+  try {
+    const response = await fetch("/api/terminal/connection", { method: remove ? "DELETE" : "PUT",
+      headers: { authorization, "Content-Type": "application/json" },
+      body: remove ? undefined : JSON.stringify(body), signal: AbortSignal.timeout(15000) });
+    if (authorization !== usedAuthorization) return;
+    if (response.status === 401) { disconnect(); throw new Error("Sign in to your workspace again."); }
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.message || "Unable to save settings.");
+    connectionConfig = result;
+    connectionGeneration++;
+    render({ ...lastState, updatedAt: lastState?.updatedAt ?? null, markets: lastState?.markets ?? [], logs: lastState?.logs ?? [],
+      account: null, equityHistory: [], agents: null, accountStatus: result.configured ? "validating" : "not-connected", connection: result });
+    element("settings-form").reset();
+    element("settings-form").elements.permission.value = result.permission;
+    element("remove-settings").hidden = !result.configured;
+    element("credentials-help").textContent = result.configured ? "Credentials saved. Leave all three blank to keep them, or enter all three to replace them." : "Enter all three credentials to connect an account.";
+    updatePermission();
+    element("settings-status").textContent = result.configured ? "Saved. Checking the account within 90 seconds." : "Connection removed. Account data is hidden.";
+    await refresh();
+  } catch (error) {
+    element("settings-status").textContent = error.name === "TimeoutError" ? "Request timed out. Reopen settings to check whether it saved." : error.message;
+  } finally {
+    savingSettings = false;
+    element("settings-fields").disabled = !authorization;
+  }
+}
+element("settings-form").addEventListener("submit", (event) => { event.preventDefault(); void saveSettings(); });
+element("remove-settings").addEventListener("click", () => void saveSettings(true));
+if (location.hash === "#settings") openSettings();
+element("pause-agents").addEventListener("click", async () => {
+  if (!authorization) return;
+  element("pause-agents").disabled = true;
+  try {
+    const response = await fetch("/api/terminal/control", { method: "PUT", headers: { authorization, "Content-Type": "application/json" },
+      body: JSON.stringify({ paused: !(lastState?.control?.paused ?? false) }), signal: AbortSignal.timeout(15000) });
+    if (!response.ok) throw new Error("Could not update agent controls. Please try again.");
+    const control = await response.json();
+    connectionGeneration++;
+    render({ ...lastState, control, agents: null });
+  } catch (error) { element("agent-control-status").textContent = error.message; }
+  finally { element("pause-agents").disabled = !authorization; }
+});

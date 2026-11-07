@@ -1,6 +1,28 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { readClassic, summarizeCandles } from "./classic-monitor.mjs";
+import { readClassic, summarizeCandles, readAccountConfig } from "./classic-monitor.mjs";
+import { mkdtemp, writeFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+test("monitor reloads credentials and honors removal even with legacy environment keys", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "classic-config-"));
+  const filename = join(directory, "bitget.json");
+  const old = process.env.BITGET_API_KEY;
+  try {
+    process.env.BITGET_API_KEY = "legacy-fixture";
+    await writeFile(filename, JSON.stringify({ revision: "one", permission: "read-write", credentials:
+      { apiKey: "fixture", secret: "secret-fixture", passphrase: "passphrase-fixture" } }));
+    assert.equal((await readAccountConfig(filename)).credentials.apiKey, "fixture");
+    await writeFile(filename, JSON.stringify({ revision: "two", permission: "read-only", credentials: null }));
+    assert.equal((await readAccountConfig(filename)).credentials, null);
+    await writeFile(filename, "{}");
+    await assert.rejects(readAccountConfig(filename), /Connection settings unavailable/);
+  } finally {
+    if (old === undefined) delete process.env.BITGET_API_KEY; else process.env.BITGET_API_KEY = old;
+    await rm(directory, { recursive: true, force: true });
+  }
+});
 
 test("monitor refuses order endpoints before signing or sending", async () => {
   await assert.rejects(readClassic({
