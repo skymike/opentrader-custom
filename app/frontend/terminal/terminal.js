@@ -1,4 +1,5 @@
 import { createTradingPanel } from './trading.js';
+import { createConnectionsPanel } from './connections.js';
 const element = (id) => document.getElementById(id);
 const definitions = [
   ["Scanner", "◫", "#ae7d31", "BTC and SOL · 1 hour"],
@@ -102,7 +103,8 @@ function render(state) {
     "Open Settings → Bitget connection to add your API key, secret and passphrase.";
   if (state.connection) {
     connectionConfig = state.connection;
-    element("settings-status").textContent = state.accountStatus === "connected" ? "Connected · Balances and positions are updating." :
+    connections.update(state.connection);
+    if (!element("settings-dialog").open) element("settings-status").textContent = state.accountStatus === "connected" ? "Connected · Balances and positions are updating." :
       state.accountStatus === "validating" ? "Saved · Waiting for the next account check (up to 90 seconds)." :
       state.accountStatus === "unavailable" ? "Unable to connect. Check all three credentials, futures read permissions and your Bitget IP allowlist." :
       "No account connected. Add your Bitget credentials below.";
@@ -182,8 +184,20 @@ let activeRequest;
 let connectionConfig;
 let lastState;
 let connectionGeneration = 0;
+const connections = createConnectionsPanel(() => authorization, result => {
+  const changed = connectionConfig?.revision !== result.revision;
+  connectionGeneration++;
+  connectionConfig = result;
+  if (changed) {
+    clearAssistant();
+    render({ ...lastState, updatedAt: lastState?.updatedAt ?? null, markets: lastState?.markets ?? [], logs: lastState?.logs ?? [],
+      account: null, equityHistory: [], agents: null, accountStatus: result.configured ? 'validating' : 'not-connected', connection: result });
+  }
+  void refresh();
+}, environment => trading.editConnection(environment));
 function disconnect() {
   authorization = undefined;
+  connections.clear();
   trading.clear();
   clearAssistant();
   activeRequest?.abort();
@@ -219,7 +233,6 @@ async function refresh() {
     void refreshAssistant();
     element("connect").hidden = true;
     element("disconnect").hidden = false;
-    if (!savingSettings) element("settings-fields").disabled = false;
   } catch (error) {
     if (authorization || error.message.startsWith("Password")) {
       clearAssistant();
@@ -242,7 +255,6 @@ element("disconnect").addEventListener("click", disconnect);
 renderMarkets([]);
 setInterval(() => void refresh(), 10_000);
 
-let savingSettings = false;
 function updateTheme() {
   const dark = document.documentElement.dataset.theme === "dark";
   element("theme-toggle").textContent = dark ? "☀ Light mode" : "☾ Dark mode";
@@ -255,73 +267,7 @@ element("theme-toggle").addEventListener("click", () => {
   updateTheme();
 });
 updateTheme();
-function updatePermission() {
-  element("permission-note").textContent = element("settings-form").elements.permission.value === "read-write"
-    ? "Read-write declared. This dashboard still only reads your account; it cannot place or cancel orders."
-    : "Read-only is sufficient for balances and positions.";
-}
-element("settings-form").addEventListener("change", updatePermission);
-function openSettings() {
-  document.querySelector(".settings-menu").open = false;
-  element("settings-form").reset();
-  element("settings-form").elements.permission.value = connectionConfig?.permission ?? "read-only";
-  element('monitor-api-version').value = connectionConfig?.apiVersion ?? 'v2';
-  element('monitor-environment').value = connectionConfig?.environment ?? 'live';
-  element("remove-settings").hidden = !connectionConfig?.configured;
-  element("credentials-help").textContent = connectionConfig?.configured
-    ? "Credentials are saved securely. Leave all three blank to keep them, or enter all three to replace them."
-    : "Enter the three values from your Bitget API key. They are never displayed again after saving.";
-  updatePermission();
-  element("settings-fields").disabled = !authorization || savingSettings;
-  element("settings-dialog").showModal();
-}
-element("open-settings").addEventListener("click", openSettings);
-element("close-settings").addEventListener("click", () => element("settings-dialog").close());
-element("settings-dialog").addEventListener("close", () => {
-  element("settings-form").reset();
-  if (location.hash === "#settings") history.replaceState(null, "", location.pathname);
-});
-async function saveSettings(remove = false) {
-  if (!authorization || savingSettings) return;
-  const usedAuthorization = authorization;
-  savingSettings = true;
-  const body = { apiKey: element("api-key").value, secret: element("api-secret").value,
-    passphrase: element("api-passphrase").value, permission: element("settings-form").elements.permission.value,
-    apiVersion: element('monitor-api-version').value, environment: element('monitor-environment').value };
-  element("settings-fields").disabled = true;
-  element("settings-status").textContent = remove ? "Removing connection…" : "Saving connection…";
-  try {
-    const response = await fetch("/api/terminal/connection", { method: remove ? "DELETE" : "PUT",
-      headers: { authorization, "Content-Type": "application/json" },
-      body: remove ? undefined : JSON.stringify(body), signal: AbortSignal.timeout(15000) });
-    if (authorization !== usedAuthorization) return;
-    if (response.status === 401) { disconnect(); throw new Error("Sign in to your workspace again."); }
-    const result = await response.json();
-    if (!response.ok) throw new Error(result.message || "Unable to save settings.");
-    connectionConfig = result;
-    connectionGeneration++;
-    clearAssistant();
-    render({ ...lastState, updatedAt: lastState?.updatedAt ?? null, markets: lastState?.markets ?? [], logs: lastState?.logs ?? [],
-      account: null, equityHistory: [], agents: null, accountStatus: result.configured ? "validating" : "not-connected", connection: result });
-    element("settings-form").reset();
-    element("settings-form").elements.permission.value = result.permission;
-    element('monitor-api-version').value = result.apiVersion ?? 'v2';
-    element('monitor-environment').value = result.environment ?? 'live';
-    element("remove-settings").hidden = !result.configured;
-    element("credentials-help").textContent = result.configured ? "Credentials saved. Leave all three blank to keep them, or enter all three to replace them." : "Enter all three credentials to connect an account.";
-    updatePermission();
-    element("settings-status").textContent = result.configured ? "Saved. Checking the account within 90 seconds." : "Connection removed. Account data is hidden.";
-    await refresh();
-  } catch (error) {
-    element("settings-status").textContent = error.name === "TimeoutError" ? "Request timed out. Reopen settings to check whether it saved." : error.message;
-  } finally {
-    savingSettings = false;
-    element("settings-fields").disabled = !authorization;
-  }
-}
-element("settings-form").addEventListener("submit", (event) => { event.preventDefault(); void saveSettings(); });
-element("remove-settings").addEventListener("click", () => void saveSettings(true));
-if (location.hash === "#settings") openSettings();
+if (location.hash === "#settings") connections.open();
 element("pause-agents").addEventListener("click", async () => {
   if (!authorization) return;
   element("pause-agents").disabled = true;

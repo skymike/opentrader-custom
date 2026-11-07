@@ -5,11 +5,8 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { presentCommentary } from "../../exchanges/terminal-assistant.mjs";
 import { registerTrading } from "../../exchanges/terminal-trading-api.mjs";
 import { registerOriginalApi } from "../../exchanges/terminal-original-api.mjs";
+import { readConnection, publicConnection, registerConnections } from "../../exchanges/terminal-connections.mjs";
 
-type Connection = { revision: string; updatedAt: number; permission: "read-only" | "read-write";
-  apiVersion?: 'v2' | 'v3'; environment?: 'demo' | 'live';
-  credentials: { apiKey: string; secret: string; passphrase: string } | null };
-const credentialsPath = () => process.env.TERMINAL_CREDENTIALS_PATH ?? "/app/data/terminal/bitget.json";
 const controlPath = () => process.env.TERMINAL_CONTROL_PATH ?? "/credentials/control.json";
 const assistantPath = () => process.env.TERMINAL_ASSISTANT_PATH ?? "/assistant";
 async function readAssistantSettings() {
@@ -19,15 +16,6 @@ async function readAssistantSettings() {
 async function readControl() {
   try { const control = JSON.parse(await readFile(controlPath(), "utf8")); return { paused: control.paused !== false }; }
   catch (error) { return { paused: (error as NodeJS.ErrnoException).code !== "ENOENT" }; }
-}
-async function readConnection(): Promise<Connection | null> {
-  try { return JSON.parse(await readFile(credentialsPath(), "utf8")); }
-  catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") return null; throw error; }
-}
-function publicConnection(config: Connection | null) {
-  return { configured: !!config?.credentials, permission: config?.permission ?? "read-only",
-    apiVersion: config?.apiVersion ?? 'v2', environment: config?.environment ?? 'live',
-    revision: config?.revision ?? null, updatedAt: config?.updatedAt ?? null, capability: "monitoring-only" };
 }
 
 export function registerTerminal(app: FastifyInstance) {
@@ -45,10 +33,7 @@ export function registerTerminal(app: FastifyInstance) {
   }
   registerTrading(app, authorize);
   registerOriginalApi(app, authorize);
-  app.get("/api/terminal/connection", { preHandler: authorize }, async (_request, reply) => {
-    try { return publicConnection(await readConnection()); }
-    catch { return reply.code(503).send({ message: "Connection settings are unavailable" }); }
-  });
+  registerConnections(app, authorize);
   app.put("/api/terminal/assistant", { preHandler: authorize, bodyLimit: 512 }, async (request, reply) => {
     const body = request.body as { enabled?: unknown } | undefined;
     if (typeof body?.enabled !== "boolean") return reply.code(400).send({ message: "Choose whether AI commentary is enabled" });
@@ -89,42 +74,6 @@ export function registerTerminal(app: FastifyInstance) {
       return { paused: body.paused };
     } catch { return reply.code(503).send({ message: "Agent control could not be saved" }); }
   });
-  app.route({ method: ["PUT", "DELETE"], url: "/api/terminal/connection", bodyLimit: 4096,
-    preHandler: authorize, handler: async (request, reply) => {
-      try {
-        const body = request.body as Record<string, unknown> | undefined;
-        let credentials: Connection["credentials"] = null;
-        let permission: Connection["permission"] = "read-only";
-        if (request.method === "PUT") {
-          if (!body || !["read-only", "read-write"].includes(String(body.permission))) {
-            return reply.code(400).send({ message: "Choose the API key permission" });
-          }
-          permission = body.permission as Connection["permission"];
-          const values = [body.apiKey, body.secret, body.passphrase];
-          if (values.every((value) => value === undefined || value === "")) {
-            credentials = (await readConnection())?.credentials ?? null;
-            if (!credentials) return reply.code(400).send({ message: "Enter all three Bitget credentials" });
-          } else {
-            if (!values.every((value) => typeof value === "string" && value.trim().length > 0 &&
-                value.length <= 512 && !/[\r\n\x00]/.test(value))) {
-              return reply.code(400).send({ message: "Enter a valid API key, secret and passphrase together" });
-            }
-            credentials = { apiKey: String(body.apiKey).trim(), secret: String(body.secret).trim(),
-              passphrase: String(body.passphrase) };
-          }
-        }
-        const apiVersion = body?.apiVersion ?? 'v2';
-        const environment = body?.environment ?? 'live';
-        if (!['v2', 'v3'].includes(String(apiVersion)) || !['demo', 'live'].includes(String(environment))) return reply.code(400).send({ message: 'Select API and environment' });
-        const config: Connection = { credentials, permission, apiVersion: apiVersion as 'v2' | 'v3', environment: environment as 'demo' | 'live', revision: randomUUID(), updatedAt: Date.now() };
-        const filename = credentialsPath();
-        await mkdir(dirname(filename), { recursive: true, mode: 0o700 });
-        const temporary = filename + "." + config.revision + ".tmp";
-        await writeFile(temporary, JSON.stringify(config), { mode: 0o600, flag: "wx" });
-        await rename(temporary, filename);
-        return publicConnection(config);
-      } catch { return reply.code(503).send({ message: "Settings could not be saved. Please try again." }); }
-    } });
   app.get("/api/terminal/state", { preHandler: authorize }, async (_request, reply) => {
     try {
       const state = JSON.parse(await readFile(process.env.TERMINAL_STATE_PATH ?? "/app/data/terminal/state.json", "utf8"));

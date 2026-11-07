@@ -118,5 +118,14 @@ export function createTradingPanel(getAuthorization) {
   }
   clear();
   setInterval(() => void refresh(), 5000);
-  return { refresh, clear };
+  return { refresh, clear, async editConnection(environment) {
+    await refresh();
+    if (!getAuthorization() || !state) return;
+    el('execution-connections').open = true;
+    el('trade-key-environment').value = environment;
+    el('trade-api-version').value = state.connections[environment]?.apiVersion ?? 'v2';
+    for (const key of ['trade-key', 'trade-secret', 'trade-passphrase']) el(key).value = '';
+    el('execution-connections').scrollIntoView({ block: 'center' }); el('trade-api-version').focus();
+    status(`Editing ${environment.toUpperCase()} execution key. Leave all three credentials blank to keep it, or replace all three. Saving stops new entries.`);
+  } };
 }

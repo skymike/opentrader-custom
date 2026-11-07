@@ -40,7 +40,7 @@
             <div class="trading-actions"><button type="submit">Save settings &amp; stop entries</button><button id="trade-arm" class="secondary" type="button">Enable new entries</button><button id="trade-reset" class="secondary" type="button" hidden>Reset reviewed halt</button></div>
           </form>
           <p class="muted">BTC / SOL · Hourly Bollinger / RSI · One managed position · One-way, isolated, 1× margin required. Stopping entries keeps position monitoring running. Daily loss uses UTC account equity, including funding and transfers.</p>
-          <details><summary>Execution account connections</summary><p id="trade-connection-status"></p>
+          <details id="execution-connections"><summary>Execution account connections</summary><p id="trade-connection-status"></p>
             <form id="trading-connection-form" class="trading-grid">
               <label>Key environment<select id="trade-key-environment"><option value="demo">Bitget demo key</option><option value="live">Bitget live key</option></select></label>
               <label>Account API<select id="trade-api-version"><option value="v2">Classic · V2</option><option value="v3">Unified · V3</option></select></label>
@@ -92,12 +92,17 @@
     </main>
   </div>
   <dialog id="settings-dialog" aria-labelledby="settings-title">
-    <div class="dialog-heading"><div><p class="eyebrow">CONNECTION SETTINGS</p><h2 id="settings-title">Bitget monitoring connection</h2></div><button id="close-settings" type="button" class="secondary" aria-label="Close connection settings">✕</button></div>
-    <p class="muted">Select your account API and environment to display balances and positions.</p>
+    <div class="dialog-heading"><div><p class="eyebrow">CONNECTION SETTINGS</p><h2 id="settings-title">Saved Bitget connections</h2></div><button id="close-settings" type="button" class="secondary" aria-label="Close connection settings">✕</button></div>
+    <p class="muted">Manage your saved keys. API version and environment are shown on every connection.</p>
     <p id="settings-status" class="settings-status" role="status">Sign in to your workspace first.</p>
-    <form id="settings-form">
+    <div class="section-title"><h3>Monitoring connections</h3><button id="add-connection" type="button" class="secondary" disabled>+ Add connection</button></div>
+    <div id="saved-connections" class="saved-connections" aria-label="Saved monitoring keys"></div>
+    <p class="muted">One monitoring connection supplies the balance and positions view. Selecting it does not enable trading.</p>
+    <form id="settings-form" hidden>
       <fieldset id="settings-fields" disabled>
         <legend class="sr-only">Bitget account credentials</legend>
+        <h3 id="connection-editor-title">Add monitoring connection</h3>
+        <label for="connection-name">Connection name</label><input id="connection-name" type="text" maxlength="60" placeholder="e.g. My Classic live account" required autocomplete="off">
         <label>Account API<select id="monitor-api-version"><option value="v2">Classic · V2</option><option value="v3">Unified · V3</option></select></label>
         <label>Environment<select id="monitor-environment"><option value="live">Live</option><option value="demo">Demo</option></select></label>
         <label for="api-key">API key</label><input id="api-key" type="password" autocomplete="new-password" maxlength="512" spellcheck="false">
@@ -109,10 +114,11 @@
           <label><input type="radio" name="permission" value="read-write"><span>Read-write</span></label>
         </div></fieldset>
         <p id="permission-note" class="muted">Read-only is sufficient for balances and positions.</p>
-        <div class="capability"><strong>Dashboard capability: monitoring only</strong><p>This selection records your key's permission. It does not change permissions at Bitget or activate order execution.</p></div>
-        <div class="settings-actions"><button id="save-settings" type="submit">Save connection</button><button id="remove-settings" class="secondary" type="button" hidden>Remove connection</button></div>
+        <div class="capability"><strong>This connection is for monitoring</strong><p>The permission label does not change permissions at Bitget or activate order execution.</p></div>
+        <div class="settings-actions"><button id="save-settings" type="submit">Save connection</button><button id="cancel-connection" class="secondary" type="button">Cancel</button></div>
       </fieldset>
     </form>
+    <section class="execution-key-section"><h3>Execution keys</h3><p class="muted">Saved separately for placing orders. Editing opens the trading connection form; changing or removing a key stops new entries.</p><div id="saved-execution-keys" class="saved-connections" aria-label="Saved execution keys"></div></section>
     <small>Credentials are stored privately on your server. Allow this server's public IP in Bitget if your key uses an IP allowlist. Never enable withdrawals for this connection.</small>
   </dialog>
 </body>

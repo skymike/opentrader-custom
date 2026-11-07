@@ -20,7 +20,7 @@ jobs:
       - run: pnpm install --lockfile --frozen-lockfile
       - run: pnpm --filter @opentrader/prisma exec prisma generate --schema src/schema.prisma
       - name: Test terminal and read-only account boundary
-        run: node --experimental-strip-types --test packages/bot/src/terminal.node-test.mjs packages/bot/src/terminal-trading.node-test.mjs packages/bot/src/terminal-original.node-test.mjs packages/exchanges/classic-monitor.node-test.mjs packages/exchanges/classic-agents.node-test.mjs packages/exchanges/terminal-assistant.node-test.mjs packages/exchanges/terminal-trading.node-test.mjs packages/exchanges/terminal-v3.node-test.mjs
+        run: node --experimental-strip-types --test packages/bot/src/terminal.node-test.mjs packages/bot/src/terminal-connections.node-test.mjs packages/bot/src/terminal-trading.node-test.mjs packages/bot/src/terminal-original.node-test.mjs packages/exchanges/classic-monitor.node-test.mjs packages/exchanges/classic-agents.node-test.mjs packages/exchanges/terminal-assistant.node-test.mjs packages/exchanges/terminal-trading.node-test.mjs packages/exchanges/terminal-v3.node-test.mjs
       - name: Build OpenTrader
         run: pnpm --filter opentrader exec tsup
       - run: python3 -m py_compile scripts/deploy-terminal.py scripts/setup-terminal-ai.py scripts/migrate-terminal-ai.py
