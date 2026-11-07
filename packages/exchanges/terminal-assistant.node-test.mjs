@@ -144,3 +144,11 @@ test('AI summary never claims zero execution orders without execution evidence',
  generate:async(instruction,facts)=>{prompts.push(facts);return 'Monitoring decisions are separate from execution activity.';}});
  await worker.tick();assert.ok(!prompts.join(' ').includes('submitted 0 orders'));
 });
+
+test('analysis hides text contradicting measured trend or RSI', async()=>{
+ const {groundedMarketAnalysis}=await import('./terminal-assistant.mjs');
+ const market={trend:'below the 20-hour mean',bandPosition:'below lower band',rsi:39,change6h:-0.3,change24h:-0.1};
+ assert.equal(groundedMarketAnalysis('Price is holding above the mean, supporting upward momentum.',market),false);
+ assert.equal(groundedMarketAnalysis('RSI indicates an overbought market.',market),false);
+ assert.equal(groundedMarketAnalysis('Price is below its 20-hour mean and lower band. RSI is in the neutral range.',market),true);
+});

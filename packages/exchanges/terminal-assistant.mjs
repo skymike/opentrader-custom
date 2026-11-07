@@ -42,6 +42,17 @@ export function analyzeMarkets(state, now = Date.now()) {
       bandWidthPct:round((m.upper-m.lower)/m.middle*100),closingLow24h:round(Math.min(...range)),closingHigh24h:round(Math.max(...range))}];
   }).slice(0,2);
 }
+export function groundedMarketAnalysis(text, market) {
+  if (!validText(text)) return false;
+  const value = text.toLowerCase();
+  const opposite = market.trend.startsWith('below') ? 'above' : market.trend.startsWith('above') ? 'below' : null;
+  if (opposite && new RegExp(opposite + '.{0,45}(mean|average)').test(value)) return false;
+  if (market.bandPosition === 'below lower band' && /above.{0,30}(band|bollinger)/.test(value)) return false;
+  if (market.bandPosition === 'above upper band' && /below.{0,30}(band|bollinger)/.test(value)) return false;
+  if (market.rsi >= 30 && market.rsi <= 70 && /overbought|oversold/.test(value)) return false;
+  if (market.change6h < 0 && market.change24h < 0 && /positive (momentum|price change)|prices? (rose|rising|increased)/.test(value)) return false;
+  return !/\b(buy now|sell now|guaranteed|will rise|will fall)\b/.test(value);
+}
 export function selectFacts(state, now = Date.now()) {
   return {
     analysis: analyzeMarkets(state, now),
@@ -78,7 +89,7 @@ export function presentCommentary(saved, state, settings, now = Date.now()) {
   }
   return { ...base, status: "ready", generatedAt: saved.generatedAt, summary: saved.summary,
     explanations: saved.explanations.map(({ symbol, text }) => ({ symbol, text })),
-    analysis: (saved.analysis ?? []).filter(e => ["BTC/USDT","SOL/USDT"].includes(e.symbol) && validText(e.text)).slice(0,2) };
+    analysis: (saved.analysis ?? []).filter(e => base.facts?.analysis.some(m => m.symbol === e.symbol && groundedMarketAnalysis(e.text,m))).slice(0,2) };
 }
 function validText(text) {
   return typeof text === "string" && text.trim().length >= 8 && text.length <= 500 &&
@@ -125,9 +136,9 @@ export function createAssistant({ readState, readSettings, write, generate, cloc
         const analysis = [];
         for (const market of facts.analysis) {
           if ((await readSettings()).revision !== settings.revision) break;
-          const text = await generate("Write two concise sentences of independent technical market analysis using only these facts. Describe trend, momentum and uncertainty. No trade instructions, predictions, invented volume or execution claims. This is separate from the bot strategy.",
-            `${market.symbol} completed hourly candle: close ${market.close}, ${market.trend}, ${market.bandPosition}; RSI ${market.rsi} (${market.momentum}); 6h change ${market.change6h}%, 24h change ${market.change24h}%; Bollinger width ${market.bandWidthPct}%. Recent 24 hourly closing-price range ${market.closingLow24h} to ${market.closingHigh24h}. Price holding above the mean supports upward momentum; falling below it weakens that reading. Neither outcome is guaranteed.`);
-          analysis.push({symbol:market.symbol,text});
+          const text = await generate("Rewrite these market observations as two short sentences. Preserve the exact above/below relationships and direction of changes. Use only supplied facts; no forecasts, recommendations or hypothetical scenarios.",
+            `${market.symbol}: The completed hourly close is ${market.trend.toUpperCase()} and ${market.bandPosition.toUpperCase()}. RSI is ${market.rsi} (${market.momentum}). The 6-hour price change is ${market.change6h}%; the 24-hour change is ${market.change24h}%. Bollinger width is ${market.bandWidthPct}%. These are historical observations, not a prediction.`);
+          if (groundedMarketAnalysis(text,market)) analysis.push({symbol:market.symbol,text});
         }
         if (!validText(summary) || !explanations.every((e) => validText(e.text))) throw new Error("Invalid commentary");
         const currentSettings = await readSettings();

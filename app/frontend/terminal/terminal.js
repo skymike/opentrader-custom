@@ -319,7 +319,7 @@ function renderAssistant(data) {
     const evidence=document.createElement('p');evidence.className='analysis-evidence';
     evidence.textContent='Close '+fact.close+' · RSI '+fact.rsi+' · 6h '+fact.change6h+'% · 24h '+fact.change24h+'% · BB width '+fact.bandWidthPct+'%';
     const reading=document.createElement('p');reading.textContent='Calculated: '+fact.trend+'; '+fact.bandPosition+'; '+fact.momentum+'. Recent hourly closing range: '+fact.closingLow24h+'–'+fact.closingHigh24h+'.';
-    const opinion=document.createElement('p');const generated=data.analysis?.find(item=>item.symbol===fact.symbol);opinion.textContent=generated?'AI interpretation: '+generated.text:'AI interpretation will appear after analysis completes.';
+    const opinion=document.createElement('p');const generated=data.analysis?.find(item=>item.symbol===fact.symbol);opinion.textContent=generated?'AI interpretation: '+generated.text:(data.status==='ready'?'AI wording could not be validated; use the calculated reading above.':'AI interpretation will appear after analysis completes.');
     const scenario=document.createElement('small');scenario.textContent='Scenario: holding above the mean ('+fact.middle+') supports upward momentum; falling below it weakens that reading. This is conditional, not a forecast. Candle closed '+new Date(fact.candleTime+3600000).toLocaleString()+'.';
     section.append(title,evidence,reading,opinion,scenario);return section;
   }));
