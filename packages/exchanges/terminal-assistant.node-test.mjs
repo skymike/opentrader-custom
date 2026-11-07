@@ -31,11 +31,12 @@ test("assistant is single-flight, cached, rate limited and never mutates trading
   const original = structuredClone(input);
   let release;
   let calls = 0;
+  const inputs = [];
   let written;
   const worker = createAssistant({ readState: async () => input,
     readSettings: async () => ({ enabled: true, revision: "one" }),
     write: async (value) => { written = value; }, clock: () => time,
-    generate: async () => { calls++; if (calls === 1) await new Promise((r) => { release = r; }); return "The code is waiting for its configured signal."; } });
+    generate: async (_instruction, facts) => { inputs.push(facts); calls++; if (calls === 1) await new Promise((r) => { release = r; }); return "The code is waiting for its configured signal."; } });
   const pending = worker.tick();
   while (!release) await new Promise((r) => setImmediate(r));
   await worker.tick();
@@ -44,6 +45,10 @@ test("assistant is single-flight, cached, rate limited and never mutates trading
   assert.equal(calls, 2); // one summary, one market explanation
   assert.equal(written.status, "ready");
   assert.equal(written.explanations.length, 1);
+  assert.equal(typeof inputs[0], "string", "small model receives a plain factual update rather than a reasoning task");
+  assert.ok(inputs[0].includes("1 markets are connected"));
+  assert.ok(inputs[0].includes("1 updates were recorded in the last 15 minutes"));
+  assert.ok(inputs[1].includes("BTC/USDT") && inputs[1].includes("Bollinger"));
   assert.deepEqual(input, original);
   await worker.tick();
   assert.equal(calls, 2);

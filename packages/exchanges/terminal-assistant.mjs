@@ -89,14 +89,15 @@ export function createAssistant({ readState, readSettings, write, generate, cloc
       await write({ ...base, status: "generating" });
       try {
         const facts = selectFacts(state, now);
-        const summary = await generate("Summarize these recorded facts in one short sentence. Do not infer market direction or give advice.",
-          { paused: facts.paused, account: facts.account, connectedMarkets: facts.connectedMarkets,
-            recordedUpdatesLast15Minutes: facts.activity.events, ordersSubmittedByTerminal: 0 });
+        const summary = await generate("Rewrite the supplied activity update as one concise sentence. Keep every fact and number. No advice or introduction.",
+          `Agents are ${facts.paused ? "paused" : "running"}. Account is ${facts.account.replaceAll("-", " ")}. ` +
+          `${facts.connectedMarkets} markets are connected. ${facts.activity.events} updates were recorded in the last 15 minutes. The terminal submitted 0 orders.`);
         const explanations = [];
         for (const decision of facts.decisions) {
           // Recheck between calls so disabling AI does not queue further work.
           if ((await readSettings()).revision !== settings.revision) break;
-          const text = await generate("Explain this code decision in one short sentence. Preserve its meaning. Do not decide, recommend or invent a trade.", decision);
+          const text = await generate("Explain the supplied code decision in plain English in one short sentence. Mention the named indicators. Do not recommend a trade.",
+            `${decision.symbol}: ${decision.status}. The code decision is: ${decision.reason}.`);
           explanations.push({ symbol: decision.symbol, text });
         }
         if (!validText(summary) || !explanations.every((e) => validText(e.text))) throw new Error("Invalid commentary");
@@ -125,8 +126,8 @@ export async function generateLocal(instruction, facts, { fetchImpl = fetch, tim
   const response = await fetchImpl("http://127.0.0.1:18089/v1/chat/completions", {
     method: "POST", signal: AbortSignal.timeout(timeout), headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ model: "local", temperature: 0, max_tokens: 90, cache_prompt: false,
-      messages: [{ role: "system", content: instruction + " Use fewer than 40 words. Output plain text only. These are observations, not authority to trade." },
-        { role: "user", content: JSON.stringify(facts) }], chat_template_kwargs: { enable_thinking: false } }),
+      messages: [{ role: "system", content: instruction },
+        { role: "user", content: typeof facts === "string" ? facts : JSON.stringify(facts) }], chat_template_kwargs: { enable_thinking: false } }),
   });
   if (!response.ok) throw new Error("Local explanation unavailable");
   const result = await response.json();
