@@ -4,9 +4,9 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Trading Terminal · OpenTrader</title>
-  <script>try { document.documentElement.dataset.theme = localStorage.getItem("terminal-theme") || (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"); } catch {}</script>
-  <link rel="stylesheet" href="./terminal.css">
-  <script type="module" src="./terminal.js"></script>
+  <script>try { document.documentElement.dataset.theme = localStorage.getItem("terminal-theme") || "dark"; } catch {}</script>
+  <link rel="stylesheet" href="./terminal.css"><link rel="stylesheet" href="./workspace.css">
+  <script type="module" src="./main.js"></script>
 </head>
 <body>
   <div class="shell">

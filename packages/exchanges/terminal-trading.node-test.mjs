@@ -202,3 +202,10 @@ test('demo acceptance signal executes once through approval or automatic and nev
   f.input.journal.demoTest = { id: 'test1', symbol: market.symbol, expiresAt: now + 300000 };
   await engine.cycle(f.input, f.deps); assert.equal(f.submitted.length, 0);
 });
+
+test('records average fill and first observed timestamps without inventing exit prices', async () => {
+ const f=fixture('automatic'); await engine.cycle(f.input,f.deps);
+ const entry=f.input.journal.entries[0];f.client.detail=async()=>({state:'filled',baseVolume:'0.99',priceAvg:'100.12'});
+ f.input.paused=true;await engine.cycle(f.input,f.deps);
+ assert.equal(entry.fillPrice,100.12);assert.equal(entry.fillObservedAt,now);assert.equal(entry.closedObservedAt,now);assert.equal(entry.exitPrice,undefined);
+});

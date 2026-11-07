@@ -300,6 +300,8 @@ let assistantRequest;
 let assistantBusy = false;
 let assistantSaving = false;
 function clearAssistant() {
+  element('ai-market-analysis').replaceChildren();
+  element('ai-analyse').disabled = !authorization;
   assistantRequest?.abort();
   element("ai-summary").hidden = true;
   element("ai-summary").textContent = "";
@@ -310,12 +312,24 @@ function clearAssistant() {
   element("ai-toggle").disabled = !authorization;
 }
 function renderAssistant(data) {
+  element('ai-analyse').disabled = !authorization || assistantSaving;
+  element('ai-market-analysis').replaceChildren(...(data.facts?.analysis ?? []).map(fact => {
+    const section=document.createElement('section');
+    const title=document.createElement('h3');title.textContent=fact.symbol+' · Completed 1h candle';
+    const evidence=document.createElement('p');evidence.className='analysis-evidence';
+    evidence.textContent='Close '+fact.close+' · RSI '+fact.rsi+' · 6h '+fact.change6h+'% · 24h '+fact.change24h+'% · BB width '+fact.bandWidthPct+'%';
+    const reading=document.createElement('p');reading.textContent='Calculated: '+fact.trend+'; '+fact.bandPosition+'; '+fact.momentum+'. Recent hourly closing range: '+fact.closingLow24h+'–'+fact.closingHigh24h+'.';
+    const opinion=document.createElement('p');const generated=data.analysis?.find(item=>item.symbol===fact.symbol);opinion.textContent=generated?'AI interpretation: '+generated.text:'AI interpretation will appear after analysis completes.';
+    const scenario=document.createElement('small');scenario.textContent='Scenario: holding above the mean ('+fact.middle+') supports upward momentum; falling below it weakens that reading. This is conditional, not a forecast. Candle closed '+new Date(fact.candleTime+3600000).toLocaleString()+'.';
+    section.append(title,evidence,reading,opinion,scenario);return section;
+  }));
+  if(!data.facts?.analysis?.length)element('ai-market-analysis').textContent='Waiting for fresh, complete hourly market data. Chart timeframe changes do not change this analysis.';
   assistantEnabled = data.enabled;
   element("ai-toggle").textContent = data.enabled ? "Turn AI off" : "Enable AI commentary";
   element("ai-toggle").setAttribute("aria-pressed", String(data.enabled));
   element("ai-toggle").disabled = !authorization || assistantSaving;
-  const messages = { ready: "AI explanation · Based on the bot's recorded decisions",
-    disabled: "AI commentary is off. The six trading modules continue to run in code.",
+  const messages = { ready: "AI analysis · Completed hourly candles · Separate from trade execution",
+    disabled: "AI is off. Calculated market facts remain available.",
     generating: "Writing a short explanation in the background. Market monitoring continues.",
     waiting: "Waiting for fresh commentary. Updates are limited to once every five minutes.",
     unavailable: "Local AI is temporarily unavailable. Recorded code decisions remain available below; retries are automatic." };
@@ -382,4 +396,14 @@ element("ai-toggle").addEventListener("click", async () => {
     element("ai-toggle").disabled = !authorization;
     void refreshAssistant();
   }
+});
+
+element('ai-analyse').addEventListener('click',async()=>{
+ if(!authorization||assistantSaving)return;
+ assistantSaving=true;const auth=authorization;connectionGeneration++;clearAssistant();element('ai-analyse').disabled=true;
+ try{const response=await fetch('/api/terminal/assistant',{method:'PUT',headers:{authorization:auth,'Content-Type':'application/json'},body:JSON.stringify({enabled:true,requestAnalysis:true}),signal:AbortSignal.timeout(5000)});
+ if(auth!==authorization)return;const data=await response.json();if(!response.ok)throw new Error(data.message??'Could not request analysis.');
+ assistantEnabled=true;element('ai-status').textContent='Analysis requested · Allow up to one minute. Trading is unchanged.';
+ }catch(error){if(auth===authorization)element('ai-status').textContent=error.message;}
+ finally{assistantSaving=false;element('ai-analyse').disabled=!authorization;}
 });

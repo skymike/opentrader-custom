@@ -24,6 +24,7 @@ export function createTradingPanel(getAuthorization, onConnections = () => {}) {
   function render() {
     if (!state) return;
     const { settings, connections, journal, stale } = state;
+    document.dispatchEvent(new CustomEvent('terminal-trading', { detail: state }));
     onConnections(connections);
     if (!connectionInitialized) {
       el('trade-api-version').value = connections[el('trade-key-environment').value].apiVersion;
@@ -82,7 +83,7 @@ export function createTradingPanel(getAuthorization, onConnections = () => {}) {
     if (!getAuthorization() || busy) return;
     busy = true;
     try { state = await api(); render(); }
-    catch (error) { if (getAuthorization()) { status(error.message); el('trade-proposals').replaceChildren(); } }
+    catch (error) { if (getAuthorization()) { status(error.message); el('trade-proposals').replaceChildren(); document.dispatchEvent(new CustomEvent('terminal-trading', { detail: state ? {...state, stale:true} : null })); } }
     finally { busy = false; }
   }
   for (const key of fields) el('trade-' + key).addEventListener('input', () => {
@@ -131,6 +132,7 @@ export function createTradingPanel(getAuthorization, onConnections = () => {}) {
     catch (error) { status(error.message); }
   });
   function clear() {
+    document.dispatchEvent(new CustomEvent('terminal-trading', { detail: null }));
     generation++; state = undefined; dirty = false; connectionInitialized = false;
     el('trading-fields').disabled = true;
     el('trading-form').reset(); el('trading-connection-form').reset();
@@ -148,6 +150,7 @@ export function createTradingPanel(getAuthorization, onConnections = () => {}) {
   return { refresh, clear, async editConnection(environment) {
     await refresh();
     if (!getAuthorization() || !state) return;
+    document.getElementById('execution-settings-dialog')?.showModal();
     el('execution-connections').open = true;
     el('trade-key-environment').value = environment;
     el('trade-api-version').value = state.connections[environment]?.apiVersion ?? 'v2';

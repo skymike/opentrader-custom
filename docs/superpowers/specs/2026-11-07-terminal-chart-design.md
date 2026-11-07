@@ -1,0 +1,2 @@
+# Integrated terminal design
+Approved mockup and implementation request, 2026-11-07. Integrated locally hosted Lightweight Charts 5.0.7, public Bitget candles with volume, BB20/2, RSI14 and visual timeframe selection. Desktop >=1200x720 fits viewport: chart left, execution/approvals/agents right, positions and AI below. Secondary content in tabs/dialog. Small screens stack. Keep monitoring and execution balances separate, preserve execution controls and safeguards. Chart never submits orders or changes strategy. Existing unrelated edits preserved.

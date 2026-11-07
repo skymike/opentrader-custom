@@ -129,3 +129,18 @@ test("local inference rejects incomplete output and times out without leaking pr
     await new Promise((resolve) => server.close(resolve));
   }
 });
+
+test('analysis uses validated completed hourly public facts and rejects stale or broken history', async () => {
+ const { analyzeMarkets } = await import('./terminal-assistant.mjs');
+ const candleTime=Math.floor(now/3600000)*3600000-3600000;
+ const input=state();input.markets=[{symbol:'BTC/USDT:USDT',status:'connected',candleTime,close:124,lower:110,middle:120,upper:130,rsi:58,
+ history:Array.from({length:25},(_,i)=>[candleTime-(24-i)*3600000,100+i])}];
+ const facts=analyzeMarkets(input,now);assert.equal(facts[0].symbol,'BTC/USDT');assert.equal(facts[0].change24h,24);assert.equal(facts[0].trend,'above the 20-hour mean');
+ assert.equal(analyzeMarkets({...input,updatedAt:now-151000},now).length,0);
+ input.markets[0].history[5][0]+=1000;assert.equal(analyzeMarkets(input,now).length,0);
+});
+test('AI summary never claims zero execution orders without execution evidence',async()=>{
+ let prompts=[];const worker=createAssistant({readState:async()=>state(),readSettings:async()=>({enabled:true,revision:'fresh'}),write:async()=>{},clock:()=>now,
+ generate:async(instruction,facts)=>{prompts.push(facts);return 'Monitoring decisions are separate from execution activity.';}});
+ await worker.tick();assert.ok(!prompts.join(' ').includes('submitted 0 orders'));
+});

@@ -61,13 +61,18 @@ async function closeEntry(entry, client, quantity, journal, save) {
   await save(journal);
 }
 
-async function reconcile(entry, client, journal, save, closeRequested) {
+async function reconcile(entry, client, journal, save, closeRequested, observedAt) {
   if (closeRequested && !entry.closeRequested) { entry.closeRequested = true; await save(journal); }
   const detail = await client.detail(entry);
   if (!['live', 'partially_filled', 'filled', 'canceled'].includes(detail.state) ||
       !validQuantity(detail.baseVolume)) throw new Error('Invalid order status');
   entry.exchangeState = detail.state;
   entry.filled = Number(detail.baseVolume);
+  // Observation time is explicit: exchange order update times are not necessarily fill times.
+  if (entry.filled > 0) {
+    entry.fillObservedAt ??= observedAt;
+    if (positive(Number(detail.priceAvg))) entry.fillPrice = Number(detail.priceAvg);
+  }
   if (['live', 'partially_filled'].includes(detail.state)) {
     // An IOC should not remain resting. Cancel residual quantity, then inspect fills again next cycle.
     await client.cancel(entry);
@@ -80,7 +85,7 @@ async function reconcile(entry, client, journal, save, closeRequested) {
   const positions = await client.positions();
   validatePositions(positions);
   const position = positions.find((p) => p.symbol === entry.symbol && p.holdSide === entry.side && Number(p.total) > 0);
-  if (!position) { entry.status = 'closed'; entry.message = 'No remaining exchange position'; return; }
+  if (!position) { entry.closedObservedAt ??= observedAt; entry.status = 'closed'; entry.message = 'No remaining exchange position'; return; }
   if (position.posMode !== 'one_way_mode' || !positive(Number(position.total)) || Number(position.total) > entry.filled + 1e-9) {
     journal.halted[entry.environment] = 'Position changed outside terminal; review on Bitget';
     entry.status = 'review'; return;
@@ -117,7 +122,7 @@ export async function cycle(input, { clientFor, save, now = Date.now }) {
     }
     try {
       await reconcile(entry, clientFor(entry.environment, connection.credentials, entry.apiVersion ?? 'v2'), journal, save,
-        validCommands.some((c) => c.action === 'close' && c.entryId === entry.id && c.environment === entry.environment));
+        validCommands.some((c) => c.action === 'close' && c.entryId === entry.id && c.environment === entry.environment), now());
     } catch { entry.message = 'Exchange reconciliation unavailable; new entries blocked'; }
   }
   const previous = journal.proposals;

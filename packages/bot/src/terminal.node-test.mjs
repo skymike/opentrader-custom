@@ -44,6 +44,8 @@ test("commentary is authenticated, cached and immediately hidden on pause or acc
     assert.equal((await app.inject({ url, headers })).json().summary, undefined);
     await app.inject({ url, method: "PUT", headers, payload: { enabled: false } });
     assert.equal((await app.inject({ url, headers })).json().status, "disabled");
+    assert.equal((await app.inject({url,method:'PUT',headers,payload:{enabled:true,requestAnalysis:true}})).statusCode,200);
+    assert.equal((await app.inject({url,method:'PUT',headers,payload:{enabled:true,requestAnalysis:true}})).statusCode,429);
     await writeFile(join(directory, "settings.json"), "{malformed");
     assert.equal((await app.inject({ url, headers })).json().enabled, false);
   } finally {

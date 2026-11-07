@@ -24,7 +24,7 @@ jobs:
       - name: Build OpenTrader
         run: pnpm --filter opentrader exec tsup
       - name: Test automatic dashboard connection checks
-        run: node --test packages/bot/src/terminal-auto-checks.node-test.mjs
+        run: node --test packages/bot/src/terminal-auto-checks.node-test.mjs app/frontend/terminal/chart-data.test.mjs app/frontend/terminal/bot-overlays.test.mjs
       - run: python3 -m py_compile scripts/deploy-terminal.py scripts/setup-terminal-ai.py scripts/migrate-terminal-ai.py
       - run: python3 -m unittest discover -s scripts -p 'test_migrate_terminal_ai.py'
       - name: Package release
@@ -33,7 +33,7 @@ jobs:
           cp -R app/dist release/app/
           cp app/frontend/index.html release/app/frontend/
           cp app/frontend/assets/index-DTKnr6h1.js release/app/frontend/assets/
-          cp app/frontend/terminal/* release/app/frontend/terminal/
+          cp -R app/frontend/terminal/. release/app/frontend/terminal/
           cp packages/exchanges/classic-monitor.mjs release/packages/exchanges/
           cp packages/exchanges/classic-agents.mjs release/packages/exchanges/
           cp packages/exchanges/terminal-assistant.mjs release/packages/exchanges/

@@ -64,3 +64,17 @@ Deployment reuses the private admin password at `~/.config/opentrader-terminal/a
 ## Limitations
 
 The original monitoring modules do not place orders or simulate fills. The separate execution panel and worker provide order submission and exits. The monitoring account key has not been verified until the user saves valid credentials and the monitor reports Connected. Existing positions block monitoring proposals because their protective orders are not inspected there. Agent modules are deterministic strategy code, not LLM agents. The original dashboard's account database is separate from the terminal connection. aggr.trade opens as an external link; no aggr data is ingested.
+
+## Integrated chart workspace (2026-11-07)
+
+The terminal uses locally hosted TradingView Lightweight Charts 5.0.7 with public Bitget BTC/SOL USDT perpetual candles. Candles, volume, BB20/2 and Wilder RSI14 share one chart. Select 5m, 15m, 1h, 4h or 1d; these choices affect only the chart, never the hourly execution strategy. The public chart sends no account credentials. WebSocket updates fall back to 15-second REST refreshes, with delayed/unavailable status and historical resync on reconnect. Indicators include the currently forming chart candle and are visual references, not execution signals.
+
+At desktop sizes of at least 1200×700, the page fits the viewport. Execution controls, approvals, chart, managed positions, agent summaries and commentary remain in the workspace; longer panel content scrolls locally. Smaller windows stack normally. Monitoring balances are in a separately labelled Monitoring tab. History, decisions and activity have tabs; risk and execution keys open in an Execution settings dialog. Charting requires browser access to api.bitget.com and ws.bitget.com.
+
+Browser regression: `node scripts/terminal-layout-smoke.cjs` (requires Playwright; the script uses the installed Codex runtime). Set LIVE_CHART=1 to exercise public Bitget data instead of fixture candles. No orders are placed; account routes are simulated.
+
+## Bot actions and AI analysis
+
+Bot actions are filtered to the selected chart market and saved execution environment. Proposal markers/limits are distinct from fills. Confirmed average entry prices and first-observed fill/closure times are recorded from reconciliation; observation times are not claimed as exchange fill times. Historical entries without timestamps remain available in Bot actions without invented markers. Exit prices and realised P&L are not inferred from closing position disappearance. SL/TP labels state the last protection-check result, not a continuous guarantee. Stale execution data hides current levels, and events beyond loaded chart candles wait for the chart to catch up.
+
+AI has Market analysis and Bot strategy tabs. Independent analysis uses validated completed hourly closes, RSI, Bollinger bands, 6/24-hour momentum and the range of recent hourly closes. The calculated facts remain visible alongside model interpretation. This does not include order-book/news/volume analysis or independent forecasts. Analyse now queues local inference, limited to once per minute. Automatic refresh remains rate limited. AI has no trading tools; enabling analysis cannot arm or submit a trade. The former hardcoded claim of zero submitted orders was removed.

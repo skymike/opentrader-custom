@@ -21,9 +21,30 @@ const reasons = new Set([
 const symbols = ["BTC/USDT:USDT", "SOL/USDT:USDT"];
 const fresh = (state, now) => Number.isFinite(state?.updatedAt) && now - state.updatedAt >= -5000 && now - state.updatedAt <= 150_000;
 
-// Explicit allowlist: raw logs, instructions, prices, balances and credentials never enter prompts.
+// Only validated public hourly market facts enter analysis. No balances, credentials or raw logs.
+export function analyzeMarkets(state, now = Date.now()) {
+  if (!fresh(state, now)) return [];
+  const latest = Math.floor(now / 3600000) * 3600000 - 3600000;
+  const round = n => Number(n.toFixed(2));
+  return (state.markets ?? []).filter(m => symbols.includes(m.symbol) && m.status === 'connected').flatMap(m => {
+    const h = m.history;
+    if (m.candleTime !== latest || !Array.isArray(h) || h.length < 25 || h.length > 480 ||
+      h.some((p,i) => !Array.isArray(p) || !Number.isFinite(p[0]) || !Number.isFinite(p[1]) || p[1] <= 0 || (i && p[0]-h[i-1][0] !== 3600000)) ||
+      h.at(-1)[0] !== latest || h.at(-1)[1] !== m.close ||
+      ![m.close,m.lower,m.middle,m.upper,m.rsi].every(Number.isFinite) || m.lower <= 0 || m.middle < m.lower || m.upper < m.middle || m.rsi < 0 || m.rsi > 100) return [];
+    const closes=h.map(p=>p[1]), range=closes.slice(-24);
+    return [{symbol:m.symbol.split(':')[0],candleTime:latest,close:round(m.close),rsi:round(m.rsi),
+      lower:round(m.lower),middle:round(m.middle),upper:round(m.upper),
+      trend:m.close>m.middle?'above the 20-hour mean':m.close<m.middle?'below the 20-hour mean':'at the 20-hour mean',
+      momentum:m.rsi>70?'overbought':m.rsi<30?'oversold':'neutral RSI range',
+      bandPosition:m.close>m.upper?'above upper band':m.close<m.lower?'below lower band':'inside the bands',
+      change6h:round((m.close/closes.at(-7)-1)*100),change24h:round((m.close/closes.at(-25)-1)*100),
+      bandWidthPct:round((m.upper-m.lower)/m.middle*100),closingLow24h:round(Math.min(...range)),closingHigh24h:round(Math.max(...range))}];
+  }).slice(0,2);
+}
 export function selectFacts(state, now = Date.now()) {
   return {
+    analysis: analyzeMarkets(state, now),
     paused: state?.agents?.paused !== false,
     account: ["connected", "unavailable", "not-connected"].includes(state?.accountStatus) ? state.accountStatus : "unavailable",
     connectedMarkets: symbols.filter((symbol) => state?.markets?.some((m) => m.symbol === symbol && m.status === "connected")).length,
@@ -41,7 +62,7 @@ function fingerprint(state, now) {
 }
 
 export function presentCommentary(saved, state, settings, now = Date.now()) {
-  const base = { enabled: settings?.enabled === true, model: "LFM2.5-1.2B", role: "explanations-only",
+  const base = { enabled: settings?.enabled === true, model: "LFM2.5-1.2B", role: "analysis-only",
     facts: fresh(state, now) ? selectFacts(state, now) : null };
   if (!base.enabled) return { ...base, status: "disabled" };
   if (!fresh(state, now) || !state?.agents) return { ...base, status: "waiting" };
@@ -56,7 +77,8 @@ export function presentCommentary(saved, state, settings, now = Date.now()) {
     return { ...base, status: ["generating", "unavailable"].includes(saved.status) ? saved.status : "waiting" };
   }
   return { ...base, status: "ready", generatedAt: saved.generatedAt, summary: saved.summary,
-    explanations: saved.explanations.map(({ symbol, text }) => ({ symbol, text })) };
+    explanations: saved.explanations.map(({ symbol, text }) => ({ symbol, text })),
+    analysis: (saved.analysis ?? []).filter(e => ["BTC/USDT","SOL/USDT"].includes(e.symbol) && validText(e.text)).slice(0,2) };
 }
 function validText(text) {
   return typeof text === "string" && text.trim().length >= 8 && text.length <= 500 &&
@@ -82,7 +104,7 @@ export function createAssistant({ readState, readSettings, write, generate, cloc
       if (cached?.fingerprint === key && cached.configRevision === settings.revision && now - cached.generatedAt < MAX_AGE - 30_000) {
         await write({ ...cached, updatedAt: now }); return;
       }
-      if (now - lastAttempt < COOLDOWN) {
+      if (now - lastAttempt < (settings.requestedAt > lastAttempt ? 60_000 : COOLDOWN)) {
         await write({ ...base, status: failureKey === key ? "unavailable" : "waiting" }); return;
       }
       lastAttempt = now;
@@ -91,7 +113,7 @@ export function createAssistant({ readState, readSettings, write, generate, cloc
         const facts = selectFacts(state, now);
         const summary = await generate("Rewrite the supplied activity update as one concise sentence. Keep every fact and number. No advice or introduction.",
           `Agents are ${facts.paused ? "paused" : "running"}. Account is ${facts.account.replaceAll("-", " ")}. ` +
-          `${facts.connectedMarkets} markets are connected. ${facts.activity.events} updates were recorded in the last 15 minutes. The terminal submitted 0 orders.`);
+          `${facts.connectedMarkets} markets are connected. ${facts.activity.events} updates were recorded in the last 15 minutes. Execution orders are tracked separately in Trade execution.`);
         const explanations = [];
         for (const decision of facts.decisions) {
           // Recheck between calls so disabling AI does not queue further work.
@@ -99,6 +121,13 @@ export function createAssistant({ readState, readSettings, write, generate, cloc
           const text = await generate("Explain the supplied code decision in plain English in one short sentence. Mention the named indicators. Do not recommend a trade.",
             `${decision.symbol}: ${decision.status}. The code decision is: ${decision.reason}.`);
           explanations.push({ symbol: decision.symbol, text });
+        }
+        const analysis = [];
+        for (const market of facts.analysis) {
+          if ((await readSettings()).revision !== settings.revision) break;
+          const text = await generate("Write two concise sentences of independent technical market analysis using only these facts. Describe trend, momentum and uncertainty. No trade instructions, predictions, invented volume or execution claims. This is separate from the bot strategy.",
+            `${market.symbol} completed hourly candle: close ${market.close}, ${market.trend}, ${market.bandPosition}; RSI ${market.rsi} (${market.momentum}); 6h change ${market.change6h}%, 24h change ${market.change24h}%; Bollinger width ${market.bandWidthPct}%. Recent 24 hourly closing-price range ${market.closingLow24h} to ${market.closingHigh24h}. Price holding above the mean supports upward momentum; falling below it weakens that reading. Neither outcome is guaranteed.`);
+          analysis.push({symbol:market.symbol,text});
         }
         if (!validText(summary) || !explanations.every((e) => validText(e.text))) throw new Error("Invalid commentary");
         const currentSettings = await readSettings();
@@ -110,7 +139,7 @@ export function createAssistant({ readState, readSettings, write, generate, cloc
         if (!fresh(current, clock()) || fingerprint(current, clock()) !== key) {
           await write({ ...base, status: "waiting" }); return;
         }
-        cached = { ...base, updatedAt: clock(), generatedAt: clock(), status: "ready", summary, explanations };
+        cached = { ...base, updatedAt: clock(), generatedAt: clock(), status: "ready", summary, explanations, analysis };
         failureKey = undefined;
         await write(cached);
       } catch {
@@ -126,7 +155,7 @@ export async function generateLocal(instruction, facts, { fetchImpl = fetch, tim
   // No exchange client, trading tools or user-selectable destination.
   const response = await fetchImpl("http://127.0.0.1:18089/v1/chat/completions", {
     method: "POST", signal: AbortSignal.timeout(timeout), headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ model: "local", temperature: 0, max_tokens: 90, cache_prompt: false,
+    body: JSON.stringify({ model: "local", temperature: 0, max_tokens: 150, cache_prompt: false,
       messages: [{ role: "system", content: instruction },
         { role: "user", content: typeof facts === "string" ? facts : JSON.stringify(facts) }], chat_template_kwargs: { enable_thinking: false } }),
   });
