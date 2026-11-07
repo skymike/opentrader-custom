@@ -4,6 +4,8 @@ export function parseSentiment(payload, now = Date.now()) {
   const value = Number(item.value), timestamp = Number(item.timestamp) * 1000;
   if (value > 100 || !Number.isFinite(timestamp) || timestamp <= 0 || timestamp > now + 300000)
     throw new Error('Invalid sentiment date or score');
-  const label = value <= 24 ? 'Extreme fear' : value <= 44 ? 'Fear' : value <= 55 ? 'Neutral' : value <= 74 ? 'Greed' : 'Extreme greed';
+  const labels = { 'Extreme Fear': 'Extreme fear', Fear: 'Fear', Neutral: 'Neutral', Greed: 'Greed', 'Extreme Greed': 'Extreme greed' };
+  const label = Object.hasOwn(labels, item.value_classification) ? labels[item.value_classification] : null;
+  if (!label) throw new Error('Invalid sentiment classification');
   return { value, label, timestamp, stale: now - timestamp > 48 * 3600000 };
 }

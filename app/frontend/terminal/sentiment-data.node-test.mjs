@@ -13,3 +13,10 @@ test('rejects malformed, out of range and future readings instead of presenting 
   assert.throws(() => parseSentiment({ data: [] }, now));
   assert.throws(() => parseSentiment(payload('27', now / 1000 + 3600), now));
 });
+test('preserves the source classification at category boundaries', () => {
+  const data = payload('25');
+  data.data[0].value_classification = 'Extreme Fear';
+  assert.equal(parseSentiment(data, now).label, 'Extreme fear');
+  data.data[0].value_classification = 'unknown';
+  assert.throws(() => parseSentiment(data, now));
+});

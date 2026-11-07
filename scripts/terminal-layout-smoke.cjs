@@ -26,7 +26,7 @@ const root = path.resolve("app/frontend/terminal");
   try {
     const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
     const errors = [];
-    await page.route('https://api.alternative.me/**', r => r.fulfill({ json: { data: [{ value: '27', timestamp: String(Math.floor(Date.now() / 1000)) }] } }));
+    await page.route('https://api.alternative.me/**', r => r.fulfill({ json: { data: [{ value: '27', value_classification: 'Fear', timestamp: String(Math.floor(Date.now() / 1000)) }] } }));
     page.on("pageerror", (e) => errors.push(e.message));
     let signedIn = false;
     const settings = {
