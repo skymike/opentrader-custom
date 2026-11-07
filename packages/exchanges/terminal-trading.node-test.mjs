@@ -182,3 +182,23 @@ test('malformed fill or position quantities never release active exposure', asyn
     assert.equal(store.activeEntry(f.input.journal.entries[0]), true);
   }
 });
+test('demo acceptance signal executes once through approval or automatic and never in live', async () => {
+  for (const mode of ['approval', 'automatic']) {
+    const f = fixture(mode);
+    f.input.marketState.markets[0] = { ...market, rsi: 50 }; // no strategy signal
+    f.input.journal.demoTest = { id: 'test1', symbol: 'BTC/USDT:USDT', expiresAt: now + 300000 };
+    await engine.cycle(f.input, f.deps);
+    if (mode === 'approval') {
+      assert.equal(f.input.journal.proposals[0]?.source, 'demo-test');
+      f.input.commands.push({ id: 'accept-test', action: 'approve', proposalId: f.input.journal.proposals[0].id, revision: 'r1', environment: 'demo', expiresAt: now + 60000 });
+      await engine.cycle(f.input, f.deps);
+    }
+    assert.equal(f.submitted.length, 1);
+    assert.ok(f.submitted[0].quantity * f.submitted[0].limit <= 20);
+    await engine.cycle(f.input, f.deps); assert.equal(f.submitted.length, 1);
+  }
+  const f = fixture('automatic'); f.input.settings.environment = 'live'; f.input.connections.live = f.input.connections.demo;
+  f.input.marketState.markets = [{ ...market, rsi: 50 }];
+  f.input.journal.demoTest = { id: 'test1', symbol: market.symbol, expiresAt: now + 300000 };
+  await engine.cycle(f.input, f.deps); assert.equal(f.submitted.length, 0);
+});

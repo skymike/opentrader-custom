@@ -57,8 +57,10 @@ import { cache } from "../../cache.js";
 import { fetcher } from "../../utils/next/fetcher.js";
 import { normalize } from "./normalize.js";
 import { exchangeCodeMapCCXT } from "../../client/constants.js";
+import { applyBitgetApi } from '../../../bitget-api-profile.mjs';
 
 export class CCXTExchange implements IExchange {
+  public bitgetApiVersion?: 'v2' | 'v3';
   public isPaper = false;
   public isDemo = false;
   public exchangeCode: ExchangeCode;
@@ -89,6 +91,10 @@ export class CCXTExchange implements IExchange {
         ? new pro[ccxtClassName as keyof typeof pro](ccxtCredentials)
         : new exchanges[ccxtClassName](ccxtCredentials);
 
+    if (exchangeCode === 'BITGET') {
+      this.bitgetApiVersion = credentials?.bitgetApiVersion ?? 'v2';
+      applyBitgetApi(this.ccxt, this.bitgetApiVersion);
+    }
     this.ccxt.fetchImplementation = fetcher; // #57
     // #88 Fixes: 'e instanceof this.AbortError' is not an object
     this.ccxt.FetchError = TypeError; // when fetch request failed (network error)

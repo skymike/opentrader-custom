@@ -4,13 +4,13 @@ import { xprisma } from "@opentrader/db";
 import type { ICacheProvider } from "../../../types/cache/cache-provider.interface.js";
 import type { IExchange } from "../../../types/exchange.interface.js";
 
-type CacheKey = ExchangeCode | `demo-${ExchangeCode}`;
+type CacheKey = string;
 
 export class PrismaCacheProvider implements ICacheProvider {
   async getMarkets(exchange: IExchange) {
     const startTime = Date.now();
 
-    const cacheKey = `${exchange.isDemo ? "demo-" : ""}${exchange.exchangeCode}` as const;
+    const cacheKey = `${exchange.isDemo ? "demo-" : ""}${exchange.exchangeCode}${exchange.bitgetApiVersion ? '-' + exchange.bitgetApiVersion : ''}`;
     const cachedMarkets = await xprisma.markets.findUnique({
       where: {
         exchangeCode: cacheKey,

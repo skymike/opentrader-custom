@@ -1,6 +1,6 @@
 export function createTradingPanel(getAuthorization) {
   const el = (id) => document.getElementById(id);
-  let state, busy = false, generation = 0, dirty = false;
+  let state, busy = false, generation = 0, dirty = false, connectionInitialized = false;
   const fields = ['environment', 'mode', 'maxNotional', 'riskPct', 'dailyLossPct'];
   const status = (message) => { el('trading-status').textContent = message; };
   async function api(path = '', method = 'GET', body) {
@@ -24,19 +24,24 @@ export function createTradingPanel(getAuthorization) {
   function render() {
     if (!state) return;
     const { settings, connections, journal, stale } = state;
+    if (!connectionInitialized) {
+      el('trade-api-version').value = connections[el('trade-key-environment').value].apiVersion;
+      connectionInitialized = true;
+    }
     el('trading-fields').disabled = false;
     if (!dirty) for (const key of fields) el('trade-' + key).value = settings[key];
     el('trading-badge').textContent = `${settings.environment.toUpperCase()} · ${settings.mode === 'automatic' ? 'Automatic' : 'Approval'} · ${settings.armed ? 'Entries enabled' : 'Entries stopped'}`;
     el('trading-badge').classList.toggle('live-trading', settings.environment === 'live');
     el('trade-arm').textContent = settings.armed ? 'Stop new entries' : 'Enable new entries';
     el('trade-arm').disabled = dirty;
+    el('demo-test-order').disabled = settings.environment !== 'demo' || !settings.armed || stale;
     status((stale ? 'Worker not reporting fresh status. ' : '') + (journal.message ?? 'Waiting for execution worker.'));
-    el('trade-connection-status').textContent = `Demo key: ${connections.demo.configured ? 'saved' : 'missing'} · Live key: ${connections.live.configured ? 'saved' : 'missing'}`;
+    el('trade-connection-status').textContent = `Demo key: ${connections.demo.configured ? 'saved' : 'missing'} (${connections.demo.apiVersion}) · Live key: ${connections.live.configured ? 'saved' : 'missing'} (${connections.live.apiVersion})`;
     const account = journal.accounts[settings.environment];
     el('trade-account').textContent = account ? `${settings.environment.toUpperCase()} execution account · Equity ${account.equity.toFixed(2)} USDT · Available ${account.available.toFixed(2)} USDT · ${new Date(account.updatedAt).toLocaleTimeString()}` : 'Execution account has not been checked yet.';
     el('trade-proposals').replaceChildren(...(journal.proposals ?? []).map((proposal) => {
       const card = document.createElement('section');
-      const heading = document.createElement('h3'); heading.textContent = `${settings.environment.toUpperCase()} · ${proposal.side.toUpperCase()} ${proposal.symbol}`;
+      const heading = document.createElement('h3'); heading.textContent = `${settings.environment.toUpperCase()} · ${proposal.source === 'demo-test' ? 'TEST TRADE · ' : ''}${proposal.side.toUpperCase()} ${proposal.symbol}`;
       const text = document.createElement('p'); text.textContent = `${proposal.quantity} units · Limit ${proposal.limit} · Stop ${proposal.stop} · Target ${proposal.target} · Estimated risk ${proposal.riskAmount.toFixed(2)} USDT`;
       const expiry = document.createElement('small'); expiry.textContent = `Expires ${new Date(proposal.expiresAt).toLocaleTimeString()}. IOC order: any unfilled quantity is cancelled.`;
       const disabled = stale || dirty || proposal.expiresAt <= Date.now() || !settings.armed;
@@ -81,18 +86,29 @@ export function createTradingPanel(getAuthorization) {
   el('trading-connection-form').addEventListener('submit', async (event) => {
     event.preventDefault();
     try {
-      state = await api('/connection', 'PUT', { environment: el('trade-key-environment').value,
+      state = await api('/connection', 'PUT', { environment: el('trade-key-environment').value, apiVersion: el('trade-api-version').value,
         apiKey: el('trade-key').value, secret: el('trade-secret').value, passphrase: el('trade-passphrase').value });
       for (const key of ['trade-key', 'trade-secret', 'trade-passphrase']) el(key).value = '';
       dirty = false; render();
     } catch (error) { status(error.message); }
+  });
+  el('trade-key-environment').addEventListener('change', () => { el('trade-api-version').value = state?.connections[el('trade-key-environment').value]?.apiVersion ?? 'v2'; });
+  el('trade-check-key').addEventListener('click', async () => {
+    status('Checking account connection…');
+    try { const result = await api('/check', 'POST', { environment: el('trade-key-environment').value });
+      status(`Connected: ${result.environment.toUpperCase()} ${result.apiVersion.toUpperCase()} · Equity ${result.equity} USDT · Available ${result.available} USDT · ${result.account.posMode}, ${result.account.marginMode}, leverage ${result.account.isolatedLongLever ?? 'not set'}`);
+    } catch (error) { status(error.message); }
+  });
+  el('demo-test-order').addEventListener('click', async () => {
+    try { await api('/demo-test', 'POST', { symbol: el('demo-test-symbol').value }); status('Demo test queued. Approval mode will wait for your approval; automatic mode will submit one test order.'); }
+    catch (error) { status(error.message); }
   });
   el('trade-remove-key').addEventListener('click', async () => {
     try { state = await api('/connection', 'DELETE', { environment: el('trade-key-environment').value }); dirty = false; render(); }
     catch (error) { status(error.message); }
   });
   function clear() {
-    generation++; state = undefined; dirty = false;
+    generation++; state = undefined; dirty = false; connectionInitialized = false;
     el('trading-fields').disabled = true;
     el('trading-form').reset(); el('trading-connection-form').reset();
     el('trade-proposals').replaceChildren(); el('trade-orders').replaceChildren();

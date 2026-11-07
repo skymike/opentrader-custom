@@ -1,7 +1,7 @@
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { tradingPath, defaultSettings, emptyJournal, readJson, atomicJson, withTradingLock } from './terminal-trading-store.mjs';
-import { createBitget } from './terminal-bitget.mjs';
+import { createTradingClient } from './terminal-exchange-router.mjs';
 import { cycle } from './terminal-execution.mjs';
 
 export async function tick(directory = tradingPath()) {
@@ -14,7 +14,7 @@ export async function tick(directory = tradingPath()) {
     try { marketState = await readJson(process.env.TERMINAL_STATE_PATH ?? '/terminal/state.json', null); } catch { /* fail closed */ }
     try { paused = (await readJson(process.env.TERMINAL_CONTROL_PATH ?? '/credentials/control.json', { paused: false })).paused !== false; } catch { /* fail closed */ }
     const save = (value) => atomicJson(join(directory, 'journal.json'), value);
-    return cycle({ settings, connections, journal, commands, marketState, paused }, { clientFor: createBitget, save });
+    return cycle({ settings, connections, journal, commands, marketState, paused }, { clientFor: createTradingClient, save });
   });
 }
 export async function trader() {

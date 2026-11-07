@@ -28,10 +28,10 @@ export function makeProposal(market, context, settings, connection, now) {
     context.equity * settings.riskPct / 100 / unitRisk, r.maxSize), r.step);
   if (![limit, stop, target, quantity].every(positive) || quantity < r.minSize || quantity * limit < r.minCost ||
       !(long ? stop < limit && limit < target : target < limit && limit < stop)) throw new Error('Order is below exchange minimum or prices are invalid');
-  const id = hash([settings.environment, connection.revision, market.symbol, market.candleTime, signal.side].join(':'));
+  const id = hash([settings.environment, connection.revision, market.symbol, market.candleTime, signal.side, market.demoTestId ?? 'strategy'].join(':'));
   return { id, proposalId: hash(id + settings.revision), environment: settings.environment, revision: settings.revision,
-    connectionRevision: connection.revision, symbol: symbolId(market.symbol), marketSymbol: market.symbol, side: signal.side,
-    quantity, limit, stop, target, riskAmount: quantity * unitRisk, tick: r.tick,
+    connectionRevision: connection.revision, apiVersion: connection.apiVersion ?? 'v2', symbol: symbolId(market.symbol), marketSymbol: market.symbol, side: signal.side,
+    quantity, limit, stop, target, riskAmount: quantity * unitRisk, tick: r.tick, source: market.demoTestId ? 'demo-test' : 'strategy',
     createdAt: now, expiresAt: now + 60000, candleTime: market.candleTime };
 }
 
@@ -116,7 +116,7 @@ export async function cycle(input, { clientFor, save, now = Date.now }) {
       journal.halted[entry.environment] = 'Original connection required to reconcile exposure'; continue;
     }
     try {
-      await reconcile(entry, clientFor(entry.environment, connection.credentials), journal, save,
+      await reconcile(entry, clientFor(entry.environment, connection.credentials, entry.apiVersion ?? 'v2'), journal, save,
         validCommands.some((c) => c.action === 'close' && c.entryId === entry.id && c.environment === entry.environment));
     } catch { entry.message = 'Exchange reconciliation unavailable; new entries blocked'; }
   }
@@ -126,12 +126,14 @@ export async function cycle(input, { clientFor, save, now = Date.now }) {
   const connection = connections[environment];
   try {
     if (!connection?.credentials) throw new Error('Save separate ' + environment + ' trading credentials');
-    const client = clientFor(environment, connection.credentials);
+    const client = clientFor(environment, connection.credentials, connection.apiVersion ?? 'v2');
     if (journal.halted[environment]) throw new Error(journal.halted[environment]);
     if (journal.entries.some(activeEntry)) throw new Error('Managing an existing or uncertain order');
+    if (journal.demoTest && (environment !== 'demo' || journal.demoTest.consumed || journal.demoTest.expiresAt < now())) throw new Error('Demo acceptance test stopped; save settings to return to strategy trading');
     if (!marketState || !Number.isFinite(marketState.updatedAt) || now() - marketState.updatedAt > 150000 || marketState.updatedAt > now() + 5000) throw new Error('Market monitor is stale');
     for (const market of marketState.markets ?? []) {
       if (!symbolId(market.symbol)) continue;
+      if (journal.demoTest && market.symbol !== journal.demoTest.symbol) continue;
       const context = await client.context(symbolId(market.symbol));
       journal.accounts[environment] = { equity: context.equity, available: context.available, updatedAt: now() };
       if (!positive(context.equity)) throw new Error('Positive account equity required');
@@ -140,7 +142,12 @@ export async function cycle(input, { clientFor, save, now = Date.now }) {
       if (context.equity <= journal.days[environment].equity * (1 - settings.dailyLossPct / 100)) throw new Error('Daily equity-loss limit reached');
       if (!settings.armed || paused) throw new Error('New entries are stopped; position monitoring continues');
       let fresh;
-      try { fresh = makeProposal(market, context, settings, connection, now()); }
+      let evaluatedMarket = market;
+      if (journal.demoTest) evaluatedMarket = { ...market, demoTestId: journal.demoTest.id, status: 'connected',
+        candleTime: Math.floor(now() / 3600000) * 3600000 - 3600000, close: context.price,
+        lower: context.price * 1.01, upper: context.price * 1.1, previousClose: context.price * 1.02,
+        previousLower: context.price * 1.01, previousUpper: context.price * 1.1, rsi: 20 };
+      try { fresh = makeProposal(evaluatedMarket, context, journal.demoTest ? { ...settings, maxNotional: Math.min(settings.maxNotional, 20) } : settings, connection, now()); }
       catch (error) { journal.message = error.message; continue; }
       if (journal.entries.some((entry) => entry.id === fresh.id)) continue;
       const existing = previous.find((p) => p.id === fresh.proposalId && p.expiresAt >= now());
@@ -159,6 +166,7 @@ export async function cycle(input, { clientFor, save, now = Date.now }) {
       if ((await client.protection(entry.symbol)).length) throw new Error('Existing protective orders require review before a new entry');
       if (entry.expiresAt < now() || now() - context.quoteTime > 15000) throw new Error('Price expired during order checks');
       journal.entries.push(entry);
+      if (journal.demoTest) journal.demoTest.consumed = true;
       await save(journal); // intent must survive a process crash before submission
       try { const result = await client.submit(entry); entry.orderId = result.orderId; entry.status = 'submitted'; }
       catch { entry.status = 'unknown'; entry.message = 'Submission outcome uncertain; reconciling without resubmission'; }

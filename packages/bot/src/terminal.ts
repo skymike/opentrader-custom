@@ -4,8 +4,10 @@ import { dirname } from "node:path";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { presentCommentary } from "../../exchanges/terminal-assistant.mjs";
 import { registerTrading } from "../../exchanges/terminal-trading-api.mjs";
+import { registerOriginalApi } from "../../exchanges/terminal-original-api.mjs";
 
 type Connection = { revision: string; updatedAt: number; permission: "read-only" | "read-write";
+  apiVersion?: 'v2' | 'v3'; environment?: 'demo' | 'live';
   credentials: { apiKey: string; secret: string; passphrase: string } | null };
 const credentialsPath = () => process.env.TERMINAL_CREDENTIALS_PATH ?? "/app/data/terminal/bitget.json";
 const controlPath = () => process.env.TERMINAL_CONTROL_PATH ?? "/credentials/control.json";
@@ -24,6 +26,7 @@ async function readConnection(): Promise<Connection | null> {
 }
 function publicConnection(config: Connection | null) {
   return { configured: !!config?.credentials, permission: config?.permission ?? "read-only",
+    apiVersion: config?.apiVersion ?? 'v2', environment: config?.environment ?? 'live',
     revision: config?.revision ?? null, updatedAt: config?.updatedAt ?? null, capability: "monitoring-only" };
 }
 
@@ -41,6 +44,7 @@ export function registerTerminal(app: FastifyInstance) {
     }
   }
   registerTrading(app, authorize);
+  registerOriginalApi(app, authorize);
   app.get("/api/terminal/connection", { preHandler: authorize }, async (_request, reply) => {
     try { return publicConnection(await readConnection()); }
     catch { return reply.code(503).send({ message: "Connection settings are unavailable" }); }
@@ -109,7 +113,10 @@ export function registerTerminal(app: FastifyInstance) {
               passphrase: String(body.passphrase) };
           }
         }
-        const config: Connection = { credentials, permission, revision: randomUUID(), updatedAt: Date.now() };
+        const apiVersion = body?.apiVersion ?? 'v2';
+        const environment = body?.environment ?? 'live';
+        if (!['v2', 'v3'].includes(String(apiVersion)) || !['demo', 'live'].includes(String(environment))) return reply.code(400).send({ message: 'Select API and environment' });
+        const config: Connection = { credentials, permission, apiVersion: apiVersion as 'v2' | 'v3', environment: environment as 'demo' | 'live', revision: randomUUID(), updatedAt: Date.now() };
         const filename = credentialsPath();
         await mkdir(dirname(filename), { recursive: true, mode: 0o700 });
         const temporary = filename + "." + config.revision + ".tmp";

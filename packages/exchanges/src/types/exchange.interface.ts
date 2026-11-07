@@ -34,6 +34,7 @@ import {
 import type { Market, Exchange } from "ccxt";
 
 export interface IExchange {
+  bitgetApiVersion?: 'v2' | 'v3';
   isPaper: boolean;
   isDemo: boolean;
 

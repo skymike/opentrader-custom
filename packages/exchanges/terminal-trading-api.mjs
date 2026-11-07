@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
+import { createTradingClient } from './terminal-exchange-router.mjs';
 import { tradingPath, defaultSettings, validateSettings, emptyJournal, validateJournal, activeEntry,
   readJson, atomicJson, withTradingLock } from './terminal-trading-store.mjs';
 
@@ -13,7 +14,7 @@ async function load() {
 }
 function present({ settings, connections, journal }) {
   return { settings, connections: Object.fromEntries(['demo', 'live'].map((environment) => [environment,
-    { configured: !!connections[environment]?.credentials, revision: connections[environment]?.revision ?? null }])),
+    { configured: !!connections[environment]?.credentials, revision: connections[environment]?.revision ?? null, apiVersion: connections[environment]?.apiVersion ?? 'v2' }])),
     journal: { ...journal, entries: journal.entries.slice(-100), handled: undefined },
     stale: !journal.updatedAt || Date.now() - journal.updatedAt > 30000 };
 }
@@ -37,6 +38,7 @@ export function registerTrading(app, authorize) {
     state.settings = next;
     await atomicJson(join(state.directory, 'settings.json'), next);
     state.journal.proposals = [];
+    delete state.journal.demoTest;
     await atomicJson(join(state.directory, 'journal.json'), state.journal);
     return present(state);
   })));
@@ -48,9 +50,16 @@ export function registerTrading(app, authorize) {
       if (state.journal.entries.some((entry) => entry.environment === environment && activeEntry(entry))) fail(409, 'Resolve managed orders and positions before replacing this connection');
       if (request.method === 'DELETE') delete state.connections[environment];
       else {
-        if (!['apiKey', 'secret', 'passphrase'].every((key) => typeof body[key] === 'string' && body[key].trim().length && body[key].length <= 512 && !/[\r\n\x00]/.test(body[key]))) fail(400, 'Enter all three credentials');
-        if (Object.entries(state.connections).some(([name, value]) => name !== environment && value.credentials?.apiKey === body.apiKey.trim())) fail(400, 'Demo and live must use different API keys');
-        state.connections[environment] = { revision: randomUUID(), credentials: { apiKey: body.apiKey.trim(), secret: body.secret.trim(), passphrase: body.passphrase } };
+        const apiVersion = body.apiVersion ?? 'v2';
+        if (!['v2', 'v3'].includes(apiVersion)) fail(400, 'Choose Classic V2 or Unified V3');
+        let credentials = state.connections[environment]?.credentials;
+        if (!['apiKey', 'secret', 'passphrase'].every((key) => body[key] === undefined || body[key] === '')) {
+          if (!['apiKey', 'secret', 'passphrase'].every((key) => typeof body[key] === 'string' && body[key].trim().length && body[key].length <= 512 && !/[\r\n\x00]/.test(body[key]))) fail(400, 'Enter all three credentials');
+          credentials = { apiKey: body.apiKey.trim(), secret: body.secret.trim(), passphrase: body.passphrase };
+        }
+        if (!credentials) fail(400, 'Enter all three credentials');
+        if (Object.entries(state.connections).some(([name, value]) => name !== environment && value.credentials?.apiKey === credentials.apiKey)) fail(400, 'Demo and live must use different API keys');
+        state.connections[environment] = { revision: randomUUID(), apiVersion, credentials };
       }
       // Persist disarm before replacing credentials; a crash between writes cannot arm the replacement.
       state.settings = { ...state.settings, armed: false, revision: randomUUID() };
@@ -61,6 +70,28 @@ export function registerTrading(app, authorize) {
       await atomicJson(join(state.directory, 'journal.json'), state.journal);
       return present(state);
     })) });
+  app.post(base + '/check', { preHandler: authorize, bodyLimit: 512 }, guarded(async (request) => {
+    const state = await load(), environment = request.body?.environment;
+    if (!['demo', 'live'].includes(environment)) fail(400, 'Choose demo or live');
+    const connection = state.connections[environment];
+    if (!connection?.credentials) fail(400, 'Save this connection first');
+    try {
+      const context = await createTradingClient(environment, connection.credentials, connection.apiVersion ?? 'v2').context('BTCUSDT');
+      return { connected: true, environment, apiVersion: connection.apiVersion ?? 'v2', equity: context.equity, available: context.available,
+        positions: context.positions.length, orders: context.orders.length, account: context.account };
+    } catch (error) { fail(400, 'Connection check failed' + (error.exchangeCode ? ' (Bitget code ' + error.exchangeCode + ')' : '') + '. Check API type, demo/live key and permissions.'); }
+  }));
+  app.post(base + '/demo-test', { preHandler: authorize, bodyLimit: 512 }, guarded(async (request) => withTradingLock(tradingPath(), async () => {
+    const state = await load();
+    if (state.settings.environment !== 'demo' || !state.settings.armed) fail(400, 'Enable demo entries before requesting a test trade');
+    const symbol = request.body?.symbol;
+    if (!['BTC/USDT:USDT', 'SOL/USDT:USDT'].includes(symbol)) fail(400, 'Choose BTC or SOL');
+    if (state.journal.entries.some(activeEntry)) fail(409, 'Close and reconcile the previous test first');
+    state.journal.demoTest = { id: randomUUID(), symbol, createdAt: Date.now(), expiresAt: Date.now() + 300000 };
+    state.journal.proposals = [];
+    await atomicJson(join(state.directory, 'journal.json'), state.journal);
+    return { queued: true, environment: 'demo', maxNotional: 20, mode: state.settings.mode };
+  })));
   app.post(base + '/command', { preHandler: authorize, bodyLimit: 1024 }, guarded(async (request) => withTradingLock(tradingPath(), async () => {
     const state = await load(), body = request.body;
     if (!['approve', 'reject', 'close', 'reset-halt'].includes(body?.action)) fail(400, 'Unknown trading action');

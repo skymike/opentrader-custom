@@ -3,6 +3,7 @@ import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { pathToFileURL } from "node:url";
 import { runAgents } from "./classic-agents.mjs";
+import { createBitgetV3 } from './terminal-bitget-v3.mjs';
 
 const allowed = new Set(["v2/mix/account/accounts", "v2/mix/position/all-position"]);
 
@@ -49,6 +50,7 @@ export async function readAccountConfig(filename) {
   try {
     const config = JSON.parse(await readFile(filename, "utf8"));
     if (typeof config.revision !== "string" || !["read-only", "read-write"].includes(config.permission) ||
+        !['v2', 'v3'].includes(config.apiVersion ?? 'v2') || !['demo', 'live'].includes(config.environment ?? 'live') ||
         (config.credentials !== null && !["apiKey", "secret", "passphrase"].every((key) =>
           typeof config.credentials?.[key] === "string" && config.credentials[key].length > 0))) {
       throw new Error("Invalid connection settings");
@@ -86,6 +88,7 @@ export async function monitor() {
     connectionRevision = config.revision;
     const accountClient = config.credentials ? new bitget({ ...options, apiKey: config.credentials.apiKey,
       secret: config.credentials.secret, password: config.credentials.passphrase }) : null;
+    if (config.environment === 'demo') accountClient?.setSandboxMode(true);
     const state = { updatedAt: Date.now(), mode: "classic-v2", access: "read-only", markets: [],
       connectionRevision, account: null, accountStatus: accountClient || configError ? "unavailable" : "not-connected", logs, equityHistory: history };
     for (const symbol of ["BTC/USDT:USDT", "SOL/USDT:USDT"]) {
@@ -104,8 +107,17 @@ export async function monitor() {
     }
     if (accountClient) {
       try {
-        const balances = await readClassic(accountClient, "v2/mix/account/accounts");
-        const positions = await readClassic(accountClient, "v2/mix/position/all-position");
+        let balances, positions;
+        if (config.apiVersion === 'v3') {
+          const unified = createBitgetV3(config.environment ?? 'live', config.credentials);
+          const assets = await unified.request('GET', 'account/assets');
+          const coin = assets.assets.find((item) => item.coin === 'USDT');
+          balances = [{ marginCoin: 'USDT', usdtEquity: assets.usdtEquity, available: coin?.available }];
+          positions = await unified.positions();
+        } else {
+          balances = await readClassic(accountClient, "v2/mix/account/accounts");
+          positions = await readClassic(accountClient, "v2/mix/position/all-position");
+        }
         const usdt = balances.find((item) => item.marginCoin === "USDT");
         const equity = Number(usdt?.usdtEquity);
         const available = Number(usdt?.available);

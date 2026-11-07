@@ -19,6 +19,7 @@ import type { ExchangeAccountWithCredentials } from "@opentrader/db";
 import type { ExchangeCode } from "@opentrader/types";
 import { exchanges } from "./exchanges/index.js";
 import type { IExchange } from "./types/index.js";
+import { getBitgetApiVersion } from '../bitget-api-profile.mjs';
 
 type ExchangeAccountId = number;
 
@@ -44,20 +45,23 @@ export class ExchangeProvider {
 
   fromAccount(exchangeAccount: ExchangeAccountWithCredentials): IExchange {
     const { id, exchangeCode, credentials } = exchangeAccount;
+    const bitgetApiVersion = exchangeCode === 'BITGET' ? getBitgetApiVersion(id) : undefined;
 
     // Return cached if instance available
     const cachedExchange = this.privateExchanges[id];
-    if (cachedExchange) {
+    if (cachedExchange && cachedExchange.bitgetApiVersion === bitgetApiVersion) {
       // console.log(
       //   `🔌 ExchangeProvider: Reused cached private instance of ${exchangeAccount.exchangeCode}: ${exchangeAccount.name} (#${exchangeAccount.id})`,
       // );
       return cachedExchange;
     }
 
+    if (cachedExchange) this.removeByAccountId(id);
     // Create new exchange instance
     const newExchange = exchanges[exchangeCode as ExchangeCode](
       {
         ...credentials,
+        bitgetApiVersion,
         code: credentials.code as ExchangeCode,
         password: credentials.password ?? "",
       },

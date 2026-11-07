@@ -39,7 +39,7 @@ def main():
     trader = "opentrader-terminal-trader"
     prior = json.loads(docker("inspect", original))[0]
     networks = list(prior["NetworkSettings"]["Networks"])
-    if networks != ["opentrader-private"] or prior["HostConfig"]["PortBindings"]:
+    if "opentrader-private" not in networks or not set(networks).issubset({"opentrader-private", "opentrader-egress"}) or prior["HostConfig"]["PortBindings"]:
         raise ValueError("Deployment topology changed. Review it before updating.")
     image = "opentrader-custom:terminal-" + args.commit[:12]
     base_image = "opentrader-custom:terminal-base-" + args.commit[:12]
@@ -53,9 +53,15 @@ def main():
         "COPY packages/exchanges/terminal-bitget.mjs /app/packages/exchanges/terminal-bitget.mjs\n"
         "COPY packages/exchanges/terminal-execution.mjs /app/packages/exchanges/terminal-execution.mjs\n"
         "COPY packages/exchanges/terminal-trader.mjs /app/packages/exchanges/terminal-trader.mjs\n"
+        "COPY packages/exchanges/terminal-bitget-v3.mjs /app/packages/exchanges/terminal-bitget-v3.mjs\n"
+        "COPY packages/exchanges/terminal-exchange-router.mjs /app/packages/exchanges/terminal-exchange-router.mjs\n"
+        "RUN mkdir -p /opt/terminal-ccxt && cd /opt/terminal-ccxt && npm install --ignore-scripts --omit=dev ccxt@4.5.92 "
+        "&& for p in app packages/exchanges packages/bot packages/trpc; do mkdir -p /app/$p/node_modules; ln -sfn /opt/terminal-ccxt/node_modules/ccxt /app/$p/node_modules/ccxt; done\n"
         f"LABEL org.opencontainers.image.revision={args.commit}\n"
     )
-    docker("build", "--network", "none", "-t", image, str(release))
+    docker("build", "-t", image, str(release))
+    if not docker("network", "ls", "-q", "--filter", "name=^opentrader-egress$"):
+        docker("network", "create", "opentrader-egress")
     volume = "opentrader-terminal-state"
     credentials_volume = "opentrader-terminal-credentials"
     assistant_volume = "opentrader-terminal-assistant"
@@ -121,7 +127,7 @@ def main():
         # Database remains in the original volume. Keep a stopped predecessor for rollback.
         docker("rename", original, backup)
         run = ["run", "-d", "--name", original, "--restart", "unless-stopped",
-               "--network", networks[0], "--env-file", str(env_path),
+               "--network", "opentrader-private", "--env-file", str(env_path),
                "-e", "TERMINAL_STATE_PATH=/terminal/state.json",
                "-e", "TERMINAL_CREDENTIALS_PATH=/credentials/bitget.json"]
         for mount in prior["Mounts"]:
@@ -135,6 +141,7 @@ def main():
                 "--mount", f"type=volume,src={trading_volume},dst=/trading",
                 "-w", "/app/app", "--entrypoint", "node", image, "dist/standalone.mjs"]
         docker(*run)
+        docker("network", "connect", "opentrader-egress", original)
         for _ in range(20):
             try:
                 output = docker("exec", original, "node", "--input-type=module", "-e",

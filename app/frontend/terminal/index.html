@@ -43,14 +43,19 @@
           <details><summary>Execution account connections</summary><p id="trade-connection-status"></p>
             <form id="trading-connection-form" class="trading-grid">
               <label>Key environment<select id="trade-key-environment"><option value="demo">Bitget demo key</option><option value="live">Bitget live key</option></select></label>
-              <label>API key<input id="trade-key" type="password" autocomplete="new-password" maxlength="512" required></label>
-              <label>API secret<input id="trade-secret" type="password" autocomplete="new-password" maxlength="512" required></label>
-              <label>Passphrase<input id="trade-passphrase" type="password" autocomplete="new-password" maxlength="512" required></label>
-              <div class="trading-actions"><button type="submit">Save execution key</button><button id="trade-remove-key" type="button" class="secondary">Remove selected key</button></div>
+              <label>Account API<select id="trade-api-version"><option value="v2">Classic · V2</option><option value="v3">Unified · V3</option></select></label>
+              <label>API key<input id="trade-key" type="password" autocomplete="new-password" maxlength="512"></label>
+              <label>API secret<input id="trade-secret" type="password" autocomplete="new-password" maxlength="512"></label>
+              <label>Passphrase<input id="trade-passphrase" type="password" autocomplete="new-password" maxlength="512"></label>
+              <div class="trading-actions"><button type="submit">Save execution key</button><button id="trade-check-key" type="button" class="secondary">Check connection</button><button id="trade-remove-key" type="button" class="secondary">Remove selected key</button></div>
             </form>
-            <small>Use separate Classic V2 futures API keys with trading permission. Demo keys must be created in Bitget demo mode. Withdrawals are not needed. Saving a key stops new entries.</small>
+            <small>Choose the API matching your Bitget account: Classic V2 or Unified V3. Use separate demo/live keys with trading permission. Leave all credential fields blank to keep a saved key when changing API. Saving stops new entries.</small>
           </details>
           <h3>Trades awaiting approval</h3><div id="trade-proposals" class="decision-grid"></div>
+          <details><summary>Test demo execution</summary><p>Create one clearly labelled test trade, capped at 20 USDT, through your selected approval or automatic mode. Test orders use current prices; they are not strategy signals. Close the test using the managed-position action below.</p>
+            <select id="demo-test-symbol"><option value="BTC/USDT:USDT">BTC / USDT</option><option value="SOL/USDT:USDT">SOL / USDT</option></select>
+            <button id="demo-test-order" type="button" class="secondary">Create demo test trade</button>
+          </details>
           <h3>Managed orders and positions</h3><div id="trade-orders"></div>
         </fieldset>
       </article>
@@ -87,12 +92,14 @@
     </main>
   </div>
   <dialog id="settings-dialog" aria-labelledby="settings-title">
-    <div class="dialog-heading"><div><p class="eyebrow">CONNECTION SETTINGS</p><h2 id="settings-title">Bitget Classic V2</h2></div><button id="close-settings" type="button" class="secondary" aria-label="Close connection settings">✕</button></div>
-    <p class="muted">Connect your real USDT futures account to display balances and open positions.</p>
+    <div class="dialog-heading"><div><p class="eyebrow">CONNECTION SETTINGS</p><h2 id="settings-title">Bitget monitoring connection</h2></div><button id="close-settings" type="button" class="secondary" aria-label="Close connection settings">✕</button></div>
+    <p class="muted">Select your account API and environment to display balances and positions.</p>
     <p id="settings-status" class="settings-status" role="status">Sign in to your workspace first.</p>
     <form id="settings-form">
       <fieldset id="settings-fields" disabled>
         <legend class="sr-only">Bitget account credentials</legend>
+        <label>Account API<select id="monitor-api-version"><option value="v2">Classic · V2</option><option value="v3">Unified · V3</option></select></label>
+        <label>Environment<select id="monitor-environment"><option value="live">Live</option><option value="demo">Demo</option></select></label>
         <label for="api-key">API key</label><input id="api-key" type="password" autocomplete="new-password" maxlength="512" spellcheck="false">
         <label for="api-secret">API secret</label><input id="api-secret" type="password" autocomplete="new-password" maxlength="512" spellcheck="false">
         <label for="api-passphrase">API passphrase</label><input id="api-passphrase" type="password" autocomplete="new-password" maxlength="512" spellcheck="false">

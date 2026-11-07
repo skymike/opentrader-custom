@@ -94,7 +94,7 @@ function render(state) {
   element("freshness").textContent = state.updatedAt
     ? (stale ? "Stale data · " : "Updated ") + new Date(state.updatedAt).toLocaleTimeString() : "Waiting for market monitor";
   element("connection-title").textContent = state.accountStatus === "connected"
-    ? "Bitget Classic account connected" : state.accountStatus === "unavailable" ? "Account connection unavailable" : "Market data connected · Account not connected";
+    ? `Bitget ${state.connection?.apiVersion ?? 'v2'} ${(state.connection?.environment ?? 'live').toUpperCase()} account connected` : state.accountStatus === "unavailable" ? "Account connection unavailable" : "Market data connected · Account not connected";
   element("status").textContent = stale ? "Data is delayed. Check the market monitor connection." :
     state.accountStatus === "connected" ? "Balances and positions refresh automatically. Account access is read-only." :
     state.accountStatus === "unavailable" ? "Open Settings → Bitget connection to check your credentials, permissions and IP allowlist." :
@@ -112,7 +112,7 @@ function render(state) {
   element("count").textContent = account ? account.positions.length : "—";
   const pnl = account?.positions.reduce((sum, p) => sum + p.pnl, 0);
   element("pnl").textContent = money(pnl);
-  element("equity-note").textContent = account ? "USDT · Real account" : "Account connection pending";
+  element("equity-note").textContent = account ? `USDT · ${(state.connection?.environment ?? 'live').toUpperCase()} account` : "Account connection pending";
   element("footer-status").textContent = stale ? "Market data delayed" : "Market monitor online";
   const decisions = state.agents?.decisions ?? [];
   const paused = state.control?.paused ?? state.agents?.paused ?? false;
@@ -265,6 +265,8 @@ function openSettings() {
   document.querySelector(".settings-menu").open = false;
   element("settings-form").reset();
   element("settings-form").elements.permission.value = connectionConfig?.permission ?? "read-only";
+  element('monitor-api-version').value = connectionConfig?.apiVersion ?? 'v2';
+  element('monitor-environment').value = connectionConfig?.environment ?? 'live';
   element("remove-settings").hidden = !connectionConfig?.configured;
   element("credentials-help").textContent = connectionConfig?.configured
     ? "Credentials are saved securely. Leave all three blank to keep them, or enter all three to replace them."
@@ -284,7 +286,8 @@ async function saveSettings(remove = false) {
   const usedAuthorization = authorization;
   savingSettings = true;
   const body = { apiKey: element("api-key").value, secret: element("api-secret").value,
-    passphrase: element("api-passphrase").value, permission: element("settings-form").elements.permission.value };
+    passphrase: element("api-passphrase").value, permission: element("settings-form").elements.permission.value,
+    apiVersion: element('monitor-api-version').value, environment: element('monitor-environment').value };
   element("settings-fields").disabled = true;
   element("settings-status").textContent = remove ? "Removing connection…" : "Saving connection…";
   try {
@@ -302,6 +305,8 @@ async function saveSettings(remove = false) {
       account: null, equityHistory: [], agents: null, accountStatus: result.configured ? "validating" : "not-connected", connection: result });
     element("settings-form").reset();
     element("settings-form").elements.permission.value = result.permission;
+    element('monitor-api-version').value = result.apiVersion ?? 'v2';
+    element('monitor-environment').value = result.environment ?? 'live';
     element("remove-settings").hidden = !result.configured;
     element("credentials-help").textContent = result.configured ? "Credentials saved. Leave all three blank to keep them, or enter all three to replace them." : "Enter all three credentials to connect an account.";
     updatePermission();

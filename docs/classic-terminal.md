@@ -1,8 +1,8 @@
-# Classic V2 account terminal
+# Bitget account terminal
 
 The original dashboard at `/` and terminal at `/terminal/index.html` share the existing service and administrator password.
 
-The **Trade execution** panel now supports approval and automatic modes for demo and live Classic V2 futures accounts. It is separate from the original read-only monitor described below. See [execution setup and recovery](terminal-execution.md). Demo/approval is the default and new entries start disabled. No real exchange fills have been verified by the implementation tests.
+The **Trade execution** panel now supports approval and automatic modes for demo and live Classic V2 or Unified V3 futures accounts. It is separate from the original read-only monitor described below. See [execution setup and recovery](terminal-execution.md). Demo/approval is the default and new entries start disabled. No real exchange fills have been verified by the implementation tests.
 
 The agent terminal also offers optional **Settings > AI commentary**: local LFM explanations and activity summaries, generated in the background. Risk Check, Sizer and Executor continue to run exclusively in code. See [local AI setup, limits and operations](local-ai-commentary.md).
 
@@ -10,9 +10,9 @@ The agent terminal also offers optional **Settings > AI commentary**: local LFM 
 
 1. Sign in to the agent terminal with your OpenTrader administrator password.
 2. Open **Settings > Bitget connection**. The original dashboard also has a **Terminal & settings** menu linking here.
-3. Enter your Bitget Classic API key, API secret and API passphrase.
+3. Choose Classic V2 or Unified V3 and Demo or Live, then enter your API key, API secret and API passphrase.
 4. Select the permission your key has: **Read-only** or **Read-write**, then save.
-5. Account checks normally complete within 90 seconds. Balances and positions are for the real Classic USDT futures account.
+5. Account checks normally complete within 90 seconds. Balances and positions are for the selected USDT futures account.
 
 The selector records the permission you declare. It cannot change permissions on Bitget, verify all granted permissions, or enable trading. Read-only is sufficient. API errors show a connection failure instead of claiming a successful connection.
 
@@ -37,7 +37,7 @@ The browser holds the admin password in memory only. Sign out or reload to clear
 
 Authenticated connection settings are written atomically with mode 600 to `/credentials/bitget.json` in the dedicated `opentrader-terminal-credentials` Docker volume. OpenTrader mounts it read-write, while the internet-connected monitor mounts it read-only. This file is protected by host permissions, not encrypted at rest. Credentials are excluded from GitHub, response bodies and application logs.
 
-The original OpenTrader container stays on its private network. Its original Exchange Accounts form is separate and cannot access Bitget directly. Use the terminal connection settings for this integration. The monitor has internet access and no published ports. Its signed account calls are restricted to GET requests for Classic V2 account balances and positions. There is no demo header.
+The original OpenTrader container retains its private network and has a separate egress network for exchange access, with no published ports. Its Bitget API settings select V2 or V3 per account. The monitor has internet access and no published ports; its account operations remain read-only. Demo requests use the paptrading header, and live requests do not.
 
 The monitor reloads settings each cycle without a container restart. Legacy environment credentials are supported only when there is no settings file; a removed-connection record prevents them from being reused. State snapshots are atomic. Snapshots older than 150 seconds are labelled stale. Disconnected or changed-account states hide prior balances and proposals.
 
