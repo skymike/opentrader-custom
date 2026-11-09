@@ -7,9 +7,10 @@
 
 - [x] Backend adapters, manual preview/submit/cancel/reconcile, configurable bot leverage/orderType/SL/TP/direction, meaningful failure/retry tests.
 - [x] Compact manual panel and bot settings, explicit demo/live review, integrate selected pair/account and order state, browser checks.
-- [ ] Independent review, regression tests, build, deploy with rollback and live read-only verification.
+- [x] Independent review, regression tests, build, deploy with rollback and live read-only verification.
 
 Review focus: concurrent requests/idempotence, partial fills and resting limit orders, reduce-only closes, leverage/margin validation, unknown submission outcomes and protections.
 
 Validation: 66 terminal regression tests pass; mocked browser flow passes; independent review fixes covered worker freshness, daily-loss baseline, rules validation and unmanaged exposure. No exchange mutations used in validation.
 
+Deployed GitHub artifact d34432ac6c3c064d64438f555bb0bfccb45700b5 to nl-server. GitHub run 42616931656 passed. Post-deploy: authenticated manual context returned 200 with valid demo account data in 382ms; unauthenticated route returned 401; public dashboard retains login redirect. Existing BTC/SOL demo positions remained protected, saved settings and connection files unchanged, LFM link active. Rollback containers retained. No test orders placed.
