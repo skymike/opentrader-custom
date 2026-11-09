@@ -982,3 +982,102 @@ dialog {
   .terminal-sidebar { order: 2; }
   .terminal-bottom { order: 3; }
 }
+
+.terminal-ai:has(.market-analysis:not([hidden])) .ai-footer { display: none; }
+
+.topbar .workspace-status {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  flex-wrap: nowrap;
+}
+.topbar .connection {
+  flex: 1;
+  padding: 0;
+  border: 0;
+}
+.topbar .connection > div {
+  min-width: 0;
+}
+.topbar .connection p {
+  margin: 0;
+}
+.topbar .key-health-summary {
+  width: auto;
+  margin: 0;
+  flex-shrink: 0;
+}
+@media (min-width: 1200px) {
+  .topbar .connection p {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 1;
+    overflow: hidden;
+  }
+}
+@media (max-width: 1199px) {
+  .topbar {
+    height: auto;
+    flex-wrap: wrap;
+  }
+  .topbar .workspace-status {
+    order: 1;
+    flex-basis: 100%;
+    flex-wrap: wrap;
+  }
+}
+.short-ai-reading {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+}
+
+.panel-move, .panel-resize { display: none; }
+.custom-panels { position: relative; }
+.custom-panels > .terminal-insights,
+.custom-panels > .terminal-sidebar { display: contents; }
+.custom-panels .editable-panel {
+  position: absolute;
+  left: var(--panel-x);
+  top: var(--panel-y);
+  width: var(--panel-w);
+  height: var(--panel-h);
+  min-height: 0;
+  max-height: none;
+  margin: 0;
+  overflow: auto;
+}
+.custom-panels .market-terminal { overflow: hidden; }
+.custom-panels #price-chart { min-height: 0; }
+.custom-panels.editing-panels .editable-panel { outline: 1px dashed #739bdf; }
+.editing-panels .panel-move,
+.editing-panels .panel-resize {
+  display: block;
+  position: absolute;
+  z-index: 2;
+  padding: 3px 8px;
+  touch-action: none;
+}
+.editing-panels .panel-move { top: 0; left: 50%; transform: translateX(-50%); cursor: grab; }
+.editing-panels .panel-resize { right: 0; bottom: 0; cursor: nwse-resize; }
+.editing-panels .moving-panel { z-index: 3; opacity: .88; }
+.custom-panels .editable-panel { grid-area: auto; }
+
+.managed-positions-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+}
+.terminal-tab-page .managed-positions-header h3 {
+  margin: 0;
+  font-size: 12px;
+}
+.terminal-tab-page .position-pair-scope {
+  padding: 2px 7px;
+  font-size: 10px;
+  line-height: 1.4;
+  white-space: nowrap;
+}

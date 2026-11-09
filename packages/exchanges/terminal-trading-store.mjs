@@ -4,12 +4,20 @@ import { randomUUID } from 'node:crypto';
 
 export const tradingPath = () => process.env.TERMINAL_TRADING_PATH ?? '/trading';
 export const defaultSettings = () => ({ revision: 'initial', environment: 'demo', mode: 'approval', armed: false,
-  maxNotional: 100, riskPct: 2, dailyLossPct: 3 });
+  maxNotional: 100, riskPct: 2, dailyLossPct: 3, maxConcurrent: 1, leverage: 1, orderType: 'limit', stopLossPct: 2, takeProfitPct: 4, direction: 'both' });
 export function validateSettings(value) {
   if (!value || !['demo', 'live'].includes(value.environment) || !['approval', 'automatic'].includes(value.mode) ||
       typeof value.armed !== 'boolean' || typeof value.revision !== 'string') throw new Error('Invalid trading settings');
   for (const [key, min, max] of [['maxNotional', 5, 10000], ['riskPct', 0.1, 2], ['dailyLossPct', 0.1, 10]]) {
     if (!Number.isFinite(value[key]) || value[key] < min || value[key] > max) throw new Error('Invalid trading limits');
+  }
+  const maxConcurrent = value.maxConcurrent ?? 1;
+  if (!Number.isInteger(maxConcurrent) || maxConcurrent < 1 || maxConcurrent > 5) throw new Error("Invalid concurrent position limit");
+  if (!Number.isInteger(value.leverage ?? 1) || (value.leverage ?? 1) < 1 || (value.leverage ?? 1) > 20 ||
+      !['limit', 'market'].includes(value.orderType ?? 'limit') || !['both', 'long', 'short'].includes(value.direction ?? 'both')) throw new Error('Invalid futures controls');
+  for (const key of ['stopLossPct', 'takeProfitPct']) {
+    const n = value[key] ?? (key === 'stopLossPct' ? 2 : 4);
+    if (!Number.isFinite(n) || n < 0.1 || n > 50) throw new Error('Invalid protective percentage');
   }
   return value;
 }

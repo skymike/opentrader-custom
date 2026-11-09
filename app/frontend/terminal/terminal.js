@@ -1,4 +1,5 @@
 import { createTradingPanel } from './trading.js';
+import { createManualFuturesPanel } from './manual-futures.js';
 import { createConnectionsPanel } from './connections.js';
 import { createMarketsPanel } from './markets.js';
 const element = (id) => document.getElementById(id);
@@ -117,7 +118,8 @@ function render(state) {
   element("pnl").textContent = money(pnl);
   element("equity-note").textContent = account ? `USDT · ${(state.connection?.environment ?? 'live').toUpperCase()} account` : "Account connection pending";
   element("footer-status").textContent = stale ? "Market data delayed" : "Market monitor online";
-  const decisions = state.agents?.decisions ?? [];
+  const selectedMarket = state.markets.find(market => market.symbol.split(":")[0] === selectedAnalysisSymbol);
+  const decisions = (state.agents?.decisions ?? []).filter(decision => decision.symbol.split(":")[0] === selectedAnalysisSymbol);
   const paused = state.control?.paused ?? state.agents?.paused ?? false;
   element("pause-agents").textContent = paused ? "Resume agents" : "Pause agents";
   element("pause-agents").disabled = !authorization;
@@ -146,13 +148,13 @@ function render(state) {
   }));
   if (!decisions.length) element("agent-decisions").textContent = paused ? "Agents paused. No active proposals." : "Waiting for the next agent evaluation.";
   const readiness = paused ? "Paused" : stale ? "Data delayed" : !decisions.length ? "Awaiting evaluation" : null;
-  const states = [stale ? "Data delayed" : state.markets.filter((m) => m.status === "connected").length + " / " + state.markets.length + " markets connected",
+  const states = [stale ? "Data delayed" : selectedAnalysisSymbol + (selectedMarket?.status === "connected" ? " · Connected" : " · Awaiting data"),
     readiness ?? decisions.filter((d) => d.risk.status === "passed").length + " / " + decisions.length + " checks passed",
     readiness ?? decisions.filter((d) => d.size.status === "sized").length + " proposals sized",
     readiness ?? decisions.filter((d) => d.execution.status === "review").length + " ready for review · No orders",
     state.logs.length + " recorded updates", account ? "Account synchronized" : "Awaiting account connection"];
   agentStates.forEach((node, index) => { node.textContent = states[index]; });
-  renderMarkets(state.markets);
+  renderMarkets(selectedMarket ? [selectedMarket] : []);
   markets.update(state);
   const history = state.equityHistory?.map((point) => point[1]) ?? [];
   element("curve").toggleAttribute("hidden", history.length < 2);
@@ -190,6 +192,7 @@ queueMicrotask(async () => {
     await refresh();
   } catch { /* Retain manual login when no authenticated gateway is available. */ }
 });
+createManualFuturesPanel(() => authorization, () => trading.refresh());
 const trading = createTradingPanel(() => authorization, value => connections.updateExecution(value));
 const markets = createMarketsPanel(() => authorization, () => { void trading.refresh(); void refresh(); });
 let busy = false;
@@ -304,7 +307,42 @@ let assistantEnabled = false;
 let assistantRequest;
 let assistantBusy = false;
 let assistantSaving = false;
+let selectedAnalysisSymbol = "BTC/USDT";
+let assistantData;
+document.addEventListener("terminal-market-select", ({ detail }) => {
+  if (!/^[A-Z0-9]{1,30}USDT$/.test(detail?.symbol ?? "")) return;
+  selectedAnalysisSymbol = detail.symbol.slice(0, -4) + "/USDT";
+  if (assistantData) renderAssistant(assistantData);
+  if (lastState) render(lastState);
+});
+function renderMarketAnalysis(data) {
+  const panel = element("ai-market-analysis");
+  const section = document.createElement("section");
+  const title = document.createElement("h3");
+  title.textContent = selectedAnalysisSymbol + " · Last closed 1h candle";
+  section.append(title);
+  const fact = data.facts?.analysis?.find(item => item.symbol === selectedAnalysisSymbol);
+  const reading = document.createElement("p");
+  if (fact) {
+    const evidence = document.createElement("p");
+    evidence.className = "analysis-evidence";
+    evidence.textContent = "RSI " + fact.rsi + " · 24h " + (fact.change24h > 0 ? "+" : "") + fact.change24h + "%";
+    section.append(evidence);
+    const generated = data.analysis?.find(item => item.symbol === selectedAnalysisSymbol)?.text;
+    reading.textContent = generated ?? (fact.trend + " · " + fact.bandPosition + ".");
+    if (generated) {
+      reading.className = "short-ai-reading";
+      reading.title = generated;
+    }
+  } else {
+    reading.textContent = "Waiting for complete hourly data.";
+  }
+  section.append(reading);
+  panel.replaceChildren(section);
+}
 function clearAssistant() {
+  assistantData = undefined;
+  clearTimeout(selectionTimer);
   element('ai-market-analysis').replaceChildren();
   element('ai-analyse').disabled = !authorization;
   assistantRequest?.abort();
@@ -318,32 +356,23 @@ function clearAssistant() {
 }
 function renderAssistant(data) {
   element('ai-analyse').disabled = !authorization || assistantSaving;
-  element('ai-market-analysis').replaceChildren(...(data.facts?.analysis ?? []).map(fact => {
-    const section=document.createElement('section');
-    const title=document.createElement('h3');title.textContent=fact.symbol+' · Completed 1h candle';
-    const evidence=document.createElement('p');evidence.className='analysis-evidence';
-    evidence.textContent='Close '+fact.close+' · RSI '+fact.rsi+' · 6h '+fact.change6h+'% · 24h '+fact.change24h+'% · BB width '+fact.bandWidthPct+'%';
-    const reading=document.createElement('p');reading.textContent='Calculated: '+fact.trend+'; '+fact.bandPosition+'; '+fact.momentum+'. Recent hourly closing range: '+fact.closingLow24h+'–'+fact.closingHigh24h+'.';
-    const opinion=document.createElement('p');const generated=data.analysis?.find(item=>item.symbol===fact.symbol);opinion.textContent=generated?'AI interpretation: '+generated.text:(data.status==='ready'?'AI wording could not be validated; use the calculated reading above.':'AI interpretation will appear after analysis completes.');
-    const scenario=document.createElement('small');scenario.textContent='Scenario: holding above the mean ('+fact.middle+') supports upward momentum; falling below it weakens that reading. This is conditional, not a forecast. Candle closed '+new Date(fact.candleTime+3600000).toLocaleString()+'.';
-    section.append(title,evidence,reading,opinion,scenario);return section;
-  }));
-  if(!data.facts?.analysis?.length)element('ai-market-analysis').textContent='Waiting for fresh, complete hourly market data. Chart timeframe changes do not change this analysis.';
+  assistantData = data;
+  renderMarketAnalysis(data);
   assistantEnabled = data.enabled;
   element("ai-toggle").textContent = data.enabled ? "Turn AI off" : "Enable AI commentary";
   element("ai-toggle").setAttribute("aria-pressed", String(data.enabled));
   element("ai-toggle").disabled = !authorization || assistantSaving;
-  const messages = { ready: "AI analysis · Completed hourly candles · Separate from trade execution",
+  const messages = { ready: "AI analysis ready",
     disabled: "AI is off. Calculated market facts remain available.",
-    generating: "Writing a short explanation in the background. Market monitoring continues.",
-    waiting: "Waiting for fresh commentary. Updates are limited to once every five minutes.",
-    unavailable: "Local AI is temporarily unavailable. Recorded code decisions remain available below; retries are automatic." };
+    generating: "Writing AI analysis…",
+    waiting: "Choose Analyze this pair or Explain this decision to request AI.",
+    unavailable: "AI is temporarily unavailable. You can request it again in a minute." };
   element("ai-status").textContent = messages[data.status] ?? messages.unavailable;
   element("ai-summary").textContent = data.summary ?? "";
   element("ai-summary").hidden = !data.summary;
   element("ai-time").textContent = data.generatedAt ? "Written " + new Date(data.generatedAt).toLocaleTimeString() : "";
-  element("ai-facts").textContent = data.facts ? `${data.facts.activity.events} recorded updates in the last 15 minutes · AI coverage: BTC & SOL (${data.facts.connectedMarkets} / 2 connected) · Account ${data.facts.account}${data.facts.paused ? " · Agents paused" : ""}` : "";
-  element("ai-explanations").replaceChildren(...(data.facts?.decisions ?? []).map((decision) => {
+  element("ai-facts").textContent = data.facts ? `${data.facts.activity.events} recorded updates in the last 15 minutes · Selected pair: ${selectedAnalysisSymbol} · Account ${data.facts.account}${data.facts.paused ? " · Agents paused" : ""}` : "";
+  element("ai-explanations").replaceChildren(...(data.facts?.decisions ?? []).filter(decision => decision.symbol === selectedAnalysisSymbol).map((decision) => {
     const section = document.createElement("section");
     const heading = document.createElement("h3");
     heading.textContent = decision.symbol;
@@ -403,12 +432,46 @@ element("ai-toggle").addEventListener("click", async () => {
   }
 });
 
-element('ai-analyse').addEventListener('click',async()=>{
- if(!authorization||assistantSaving)return;
- assistantSaving=true;const auth=authorization;connectionGeneration++;clearAssistant();element('ai-analyse').disabled=true;
- try{const response=await fetch('/api/terminal/assistant',{method:'PUT',headers:{authorization:auth,'Content-Type':'application/json'},body:JSON.stringify({enabled:true,requestAnalysis:true}),signal:AbortSignal.timeout(5000)});
- if(auth!==authorization)return;const data=await response.json();if(!response.ok)throw new Error(data.message??'Could not request analysis.');
- assistantEnabled=true;element('ai-status').textContent='Analysis requested · Allow up to one minute. Trading is unchanged.';
- }catch(error){if(auth===authorization)element('ai-status').textContent=error.message;}
- finally{assistantSaving=false;element('ai-analyse').disabled=!authorization;}
-});
+const analyzePair = element("ai-analyse");
+analyzePair.textContent = "Analyze this pair";
+const explainDecision = document.createElement("button");
+explainDecision.className = "secondary";
+explainDecision.type = "button";
+explainDecision.textContent = "Explain this decision";
+analyzePair.after(explainDecision);
+
+async function requestAnalysis(tabIndex) {
+  if (!authorization || assistantSaving) return;
+  const symbol = selectedAnalysisSymbol;
+  const status = element("ai-status");
+  if (!assistantData?.facts?.analysis?.some(market => market.symbol === symbol)) {
+    status.textContent = "This pair needs a complete, current hourly candle history.";
+    return;
+  }
+  document.querySelectorAll(".analysis-tabs [aria-pressed]")[tabIndex]?.click();
+  if (assistantData.status === "ready" && assistantData.selectedSymbol === symbol) return;
+  const auth = authorization;
+  assistantSaving = true;
+  connectionGeneration++;
+  analyzePair.disabled = explainDecision.disabled = true;
+  try {
+    const response = await fetch("/api/terminal/assistant", {
+      method: "PUT",
+      headers: { authorization: auth, "Content-Type": "application/json" },
+      body: JSON.stringify({ enabled: true, requestAnalysis: true, symbol }),
+      signal: AbortSignal.timeout(5000),
+    });
+    if (auth !== authorization) return;
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.message ?? "Could not request AI.");
+    assistantEnabled = data.enabled;
+    status.textContent = "AI requested for " + symbol + ".";
+  } catch (error) {
+    if (auth === authorization) status.textContent = error.message;
+  } finally {
+    assistantSaving = false;
+    analyzePair.disabled = explainDecision.disabled = !authorization;
+  }
+}
+analyzePair.addEventListener("click", () => void requestAnalysis(0));
+explainDecision.addEventListener("click", () => void requestAnalysis(1));

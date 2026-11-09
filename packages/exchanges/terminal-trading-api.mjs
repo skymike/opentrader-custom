@@ -1,3 +1,4 @@
+import { registerManualTrading } from './terminal-manual.mjs';
 import { randomUUID } from 'node:crypto';
 import { registerMarkets } from './terminal-markets-api.mjs';
 import { readMarkets } from './terminal-markets.mjs';
@@ -23,6 +24,7 @@ function present({ settings, connections, journal }) {
 }
 export function registerTrading(app, authorize) {
   registerMarkets(app, authorize);
+  registerManualTrading(app, authorize, load);
   const base = '/api/terminal/trading';
   const guarded = (fn) => async (request, reply) => {
     try { return await fn(request); }
@@ -45,10 +47,12 @@ export function registerTrading(app, authorize) {
     const state = await load(), body = request.body;
     if (!body || body.revision !== state.settings.revision) fail(409, 'Settings changed; refresh before saving');
     const next = { revision: randomUUID(), environment: body.environment, mode: body.mode, armed: body.armed,
-      maxNotional: body.maxNotional, riskPct: body.riskPct, dailyLossPct: body.dailyLossPct };
+      leverage: body.leverage ?? state.settings.leverage ?? 1, orderType: body.orderType ?? state.settings.orderType ?? 'limit',
+      stopLossPct: body.stopLossPct ?? state.settings.stopLossPct ?? 2, takeProfitPct: body.takeProfitPct ?? state.settings.takeProfitPct ?? 4, direction: body.direction ?? state.settings.direction ?? 'both',
+      maxNotional: body.maxNotional, riskPct: body.riskPct, dailyLossPct: body.dailyLossPct, maxConcurrent: body.maxConcurrent ?? state.settings.maxConcurrent ?? 1 };
     try { validateSettings(next); } catch { fail(400, 'Choose valid trading modes and limits'); }
     const switching = next.environment !== state.settings.environment || next.mode !== state.settings.mode;
-    if (switching) next.armed = false;
+    if (switching || next.maxConcurrent !== (state.settings.maxConcurrent ?? 1)) next.armed = false;
     if (next.armed && !state.connections[next.environment]?.credentials) fail(400, 'Save trading credentials for this environment first');
     if (next.armed && next.environment === 'live' && body.liveAcknowledgement !== 'ENABLE LIVE TRADING') fail(400, 'Type ENABLE LIVE TRADING to enable real orders');
     state.settings = next;

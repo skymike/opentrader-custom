@@ -64,7 +64,17 @@ const root = path.resolve("app/frontend/terminal");
             control: { paused: false },
           },
         });
-      if (u.pathname.endsWith("/assistant")) return r.fulfill({ json: { enabled: false, status: "disabled" } });
+      if (u.pathname.endsWith("/markets")) return r.fulfill({ json: {
+        pairs: ["BTC", "SOL", "ETH"].map(base => ({ symbol: base + "/USDT:USDT", watch: true })),
+        catalog: [], maxMarkets: 25,
+      } });
+      if (u.pathname.endsWith("/assistant")) return r.fulfill({ json: {
+        enabled: false, status: "disabled", facts: {
+          activity: { events: 0 }, analysis: ["BTC", "SOL", "ETH"].map((base, index) => ({
+            symbol: base + "/USDT", rsi: 40 + index, change24h: 1, trend: "above the mean", bandPosition: "inside bands",
+          })),
+        },
+      } });
       if (u.pathname.endsWith("/connections")) return r.fulfill({ json: { connections: [] } });
       if (u.pathname.endsWith("/trading")) {
         if (r.request().method() === "PUT") Object.assign(settings, r.request().postDataJSON());
@@ -174,7 +184,29 @@ const root = path.resolve("app/frontend/terminal");
     assert.equal(await page.locator("#equity").isVisible(), true);
     await page.getByRole("tab", { name: "Managed positions", exact: true }).click();
     await page.locator("#theme-toggle").click();
-    await page.locator('[data-symbol="SOLUSDT"]').click();
+    await page.locator("#chart-market").selectOption("ETHUSDT");
+    await page.waitForFunction(() => document.querySelector("#ai-market-analysis h3")?.textContent.startsWith("ETH/USDT"));
+    assert.match(await page.locator("#ai-market-analysis").innerText(), /RSI 42/);
+    assert.equal(await page.locator("#ai-market-analysis h3").count(), 1);
+    await page.setViewportSize({ width: 1440, height: 675 });
+    await page.getByRole("button", { name: "Layout", exact: true }).click();
+    const meter = page.locator(".sentiment-panel");
+    const original = await meter.boundingBox();
+    await page.getByRole("button", { name: "Resize Fear & Greed", exact: true }).press("ArrowLeft");
+    assert.ok((await meter.boundingBox()).width < original.width - 8, "resize reduces width");
+    const handle = await page.getByRole("button", { name: "Move Fear & Greed", exact: true }).boundingBox();
+    const chart = await page.locator(".market-terminal").boundingBox();
+    await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(chart.x + chart.width / 2, chart.y + chart.height / 2, { steps: 8 });
+    await page.mouse.up();
+    assert.ok(Math.abs((await meter.boundingBox()).x - chart.x) < 2, "drag swaps panels");
+    await page.getByRole("button", { name: "Done", exact: true }).click();
+    await page.reload();
+    assert.ok(Math.abs((await meter.boundingBox()).x - chart.x) < 2, "layout persists after reload");
+    await page.getByRole("button", { name: "Layout", exact: true }).click();
+    await page.getByRole("button", { name: "Reset layout", exact: true }).click();
+    assert.ok(Math.abs((await meter.boundingBox()).x - original.x) < 2, "reset restores position");
     await page.locator("#chart-interval").selectOption("15m");
     await page.setViewportSize({ width: 390, height: 844 });
     assert.equal(
@@ -183,7 +215,7 @@ const root = path.resolve("app/frontend/terminal");
       "mobile overflow",
     );
     await page.screenshot({ path: path.resolve("../terminal-redesign-mobile.png"), fullPage: true });
-    await page.locator("#disconnect").click();
+    if (await page.locator("#disconnect").isVisible()) await page.locator("#disconnect").click();
     assert.equal(await page.locator("#trade-mode").isDisabled(), true);
     assert.deepEqual(errors, []);
     console.log(

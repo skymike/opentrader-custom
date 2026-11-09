@@ -234,3 +234,28 @@ test('records average fill and first observed timestamps without inventing exit 
  f.input.paused=true;await engine.cycle(f.input,f.deps);
  assert.equal(entry.fillPrice,100.12);assert.equal(entry.fillObservedAt,now);assert.equal(entry.closedObservedAt,now);assert.equal(entry.exitPrice,undefined);
 });
+
+test('concurrent slots admit a second pair only alongside reconciled protected exposure', async () => {
+  const f = fixture('automatic');
+  f.input.settings.maxConcurrent = 2;
+  f.input.marketState.markets = [market, { ...market, symbol: 'SOL/USDT:USDT' }];
+  await engine.cycle(f.input, f.deps);
+  const first = f.input.journal.entries[0];
+  assert.equal(first.symbol, 'BTCUSDT');
+  const position = { symbol: first.symbol, holdSide: first.side, total: String(first.quantity), posMode: "one_way_mode" };
+  const orders = [
+    { orderId: 'stop', planType: 'loss_plan', triggerPrice: first.stop },
+    { orderId: 'target', planType: 'profit_plan', triggerPrice: first.target },
+  ].map(row => ({ ...row, symbol: first.symbol, holdSide: first.side, size: first.quantity, planStatus: 'live' }));
+  f.client.detail = async () => ({ state: 'filled', baseVolume: String(first.quantity) });
+  f.client.positions = async () => [position];
+  f.client.protection = async symbol => symbol === first.symbol ? orders : [];
+  f.client.context = async () => ({ ...f.ctx, positions: [position], orders: [...orders, { symbol: 'SOLUSDT', orderId: 'unknown' }] });
+  await engine.cycle(f.input, f.deps);
+  assert.equal(f.submitted.length, 1);
+  assert.match(f.input.journal.message, /Unmanaged/);
+  f.client.context = async () => ({ ...f.ctx, positions: [position], orders });
+  await engine.cycle(f.input, f.deps);
+  assert.deepEqual(f.submitted.map(entry => entry.symbol), ['BTCUSDT', 'SOLUSDT']);
+  assert.ok(f.submitted.reduce((risk, entry) => risk + entry.riskAmount, 0) <= f.ctx.equity * f.input.settings.riskPct / 100);
+});

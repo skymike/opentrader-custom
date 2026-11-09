@@ -40,7 +40,8 @@
             <div class="execution-primary"><button id="trade-arm" type="button">Enable demo entries</button><button id="trade-reset" class="secondary danger" type="button" hidden>Reset halt</button></div>
             <div id="trade-unsaved" class="execution-unsaved" hidden><span>Unsaved changes</span><button type="submit">Save &amp; stop entries</button></div>
             <details class="execution-detail" id="trade-risk-settings"><summary>Risk settings <span id="trade-risk-summary">2% equity · 3% daily loss limit</span></summary><div class="trading-grid">
-              <label>Risk per trade · % equity<input id="trade-riskPct" type="number" min="0.1" max="2" step="0.1" value="2" required></label>
+              <label>Concurrent positions<input id="trade-maxConcurrent" type="number" min="1" max="5" step="1" value="1" required></label>
+              <label>Combined stop risk · % equity<input id="trade-riskPct" type="number" min="0.1" max="2" step="0.1" value="2" required></label>
               <label>Daily loss limit · % equity<input id="trade-dailyLossPct" type="number" min="0.1" max="10" step="0.1" value="3" required></label>
             </div><small>BTC / SOL · Hourly Bollinger / RSI · One managed position · One-way, isolated, 1× margin. Daily loss resets at UTC midnight and includes funding and transfers.</small></details>
           </form>

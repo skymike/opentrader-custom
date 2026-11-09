@@ -145,6 +145,37 @@ test('AI summary never claims zero execution orders without execution evidence',
  await worker.tick();assert.ok(!prompts.join(' ').includes('submitted 0 orders'));
 });
 
+test("on-demand requests cover watched altcoins, reuse results and never regenerate after a data change", async () => {
+  const input = state();
+  const candleTime = Math.floor(now / 3600000) * 3600000 - 3600000;
+  input.markets = [{ symbol: "XRP/USDT:USDT", status: "connected", candleTime, close: 124,
+    lower: 110, middle: 120, upper: 130, rsi: 58,
+    history: Array.from({ length: 25 }, (_, i) => [candleTime - (24 - i) * 3600000, 100 + i]) }];
+  input.agents.decisions[0].symbol = "XRP/USDT:USDT";
+  let settings = { enabled: true, revision: "initial", symbol: "XRP/USDT" };
+  let output;
+  const prompts = [];
+  const worker = createAssistant({ onDemand: true, readState: async () => input, readSettings: async () => settings,
+    clock: () => now, write: async value => { output = value; },
+    generate: async (_instruction, facts) => { prompts.push(facts); return "XRP closed above its hourly mean with RSI in the neutral range."; } });
+  await worker.tick();
+  assert.equal(prompts.length, 0);
+  settings = { ...settings, revision: "request", requestedAt: now };
+  await worker.tick();
+  assert.equal(output.status, "ready");
+  assert.equal(output.analysis[0].symbol, "XRP/USDT");
+  assert.equal(output.explanations[0].symbol, "XRP/USDT");
+  assert.equal(prompts.length, 2);
+  settings = { ...settings, revision: "repeat" };
+  await worker.tick();
+  assert.equal(prompts.length, 2);
+  assert.equal(output.configRevision, "repeat");
+  input.markets[0].rsi = 59;
+  await worker.tick();
+  assert.equal(prompts.length, 2);
+  assert.equal(output.status, "waiting");
+});
+
 test('analysis hides text contradicting measured trend or RSI', async()=>{
  const {groundedMarketAnalysis}=await import('./terminal-assistant.mjs');
  const market={trend:'below the 20-hour mean',bandPosition:'below lower band',rsi:39,change6h:-0.3,change24h:-0.1};

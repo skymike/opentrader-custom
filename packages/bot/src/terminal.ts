@@ -35,15 +35,19 @@ export function registerTerminal(app: FastifyInstance) {
   registerOriginalApi(app, authorize);
   registerConnections(app, authorize);
   app.put("/api/terminal/assistant", { preHandler: authorize, bodyLimit: 512 }, async (request, reply) => {
-    const body = request.body as { enabled?: unknown; requestAnalysis?: unknown } | undefined;
-    if (typeof body?.enabled !== "boolean") return reply.code(400).send({ message: "Choose whether AI commentary is enabled" });
+    const body = request.body as { enabled?: unknown; requestAnalysis?: unknown; followSelection?: unknown; symbol?: unknown } | undefined;
+    if (!body || (typeof body.enabled !== "boolean" && !((body.requestAnalysis === true || body.followSelection === true) && typeof body.symbol === "string"))) return reply.code(400).send({ message: "Choose whether AI commentary is enabled" });
+    if (body.symbol !== undefined && (typeof body.symbol !== "string" || !/^[A-Z0-9]{1,30}\/USDT$/.test(body.symbol)))
+      return reply.code(400).send({ message: "Choose a valid USDT market" });
     try {
       const filename = assistantPath() + "/settings.json";
       await mkdir(dirname(filename), { recursive: true, mode: 0o700 });
       const previous = await readAssistantSettings();
+      if (body.enabled === undefined && previous.enabled !== true) return { enabled: false };
+      if (body.followSelection === true && previous.symbol === body.symbol) return { enabled: true };
       if (body.requestAnalysis === true && Date.now() - (previous.requestedAt ?? 0) < 60_000)
         return reply.code(429).send({ message: "Analysis was already requested. Please wait one minute." });
-      const settings = { enabled: body.enabled, revision: randomUUID(),
+      const settings = { enabled: body.enabled ?? previous.enabled, revision: randomUUID(), symbol: body.symbol ?? previous.symbol,
         requestedAt: body.requestAnalysis === true ? Date.now() : previous.requestedAt };
       const temporary = filename + "." + settings.revision + ".tmp";
       await writeFile(temporary, JSON.stringify(settings), { mode: 0o600, flag: "wx" });

@@ -1,3 +1,4 @@
+import { mountLayoutEditor } from "./layout-editor.js";
 import { mountSentiment } from './sentiment.js';
 // Rearrange existing controls without replacing their IDs or execution handlers.
 const el = (id) => document.getElementById(id);
@@ -159,10 +160,12 @@ layout.append(insights, market, sidebar, bottom);
 const connection = document.querySelector(".connection");
 const statusstrip = create("div", "workspace-status");
 statusstrip.append(connection, el("open-key-health"));
+document.querySelector(".topbar > .toolbar").before(statusstrip);
 const footer = document.querySelector("footer");
 footer.prepend(el("freshness"));
-main.replaceChildren(statusstrip, layout, footer);
+main.replaceChildren(layout, footer);
 oldWorkspace.remove();
+mountLayoutEditor(layout);
 document.querySelector(".settings-menu a").addEventListener("click", (event) => {
   event.preventDefault();
   ai.scrollIntoView({ block: "nearest" });

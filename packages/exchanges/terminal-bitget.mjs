@@ -3,7 +3,7 @@ import { createHmac } from 'node:crypto';
 const routes = {
   GET: new Set(['account/accounts', 'account/account', 'position/all-position', 'order/detail', 'order/orders-pending',
     'order/orders-plan-pending', 'market/contracts', 'market/ticker']),
-  POST: new Set(['order/place-order', 'order/cancel-order']),
+  POST: new Set(['account/set-leverage', 'order/place-order', 'order/cancel-order']),
 };
 const base = { productType: 'USDT-FUTURES', marginCoin: 'USDT' };
 export const validQuantity = (value) => (typeof value === 'number' || (typeof value === 'string' && value.trim() !== '')) && Number.isFinite(Number(value)) && Number(value) >= 0;
@@ -66,11 +66,11 @@ export function createBitget(environment, credentials, fetcher = fetch, clock = 
       if (!Array.isArray(result?.entrustedList)) throw new Error('Protective order response unavailable');
       return result.entrustedList;
     },
+    setLeverage: (entry) => request('POST', 'account/set-leverage', { ...base, symbol: entry.symbol, leverage: String(entry.leverage ?? 1), holdSide: entry.side }),
     submit: (entry) => request('POST', 'order/place-order', { ...base, symbol: entry.symbol, marginMode: 'isolated',
-      size: String(entry.quantity), price: String(entry.limit), side: entry.side === 'long' ? 'buy' : 'sell',
-      orderType: 'limit', force: 'ioc', clientOid: entry.id, reduceOnly: 'NO',
-      presetStopLossPrice: String(entry.stop), presetStopSurplusPrice: String(entry.target),
-      presetStopLossExecutePrice: '0', presetStopSurplusExecutePrice: '0' }),
+      size: String(entry.quantity), ...(entry.orderType !== 'market' ? { price: String(entry.limit), force: entry.timeInForce ?? 'ioc' } : {}),
+      side: (entry.side === 'long') !== (entry.action === 'close') ? 'buy' : 'sell', orderType: entry.orderType ?? 'limit', clientOid: entry.id,
+      reduceOnly: entry.action === 'close' ? 'YES' : 'NO', ...(entry.action === 'close' ? {} : { presetStopLossPrice: String(entry.stop), presetStopSurplusPrice: String(entry.target), presetStopLossExecutePrice: '0', presetStopSurplusExecutePrice: '0' }) }),
     cancel: (entry) => request('POST', 'order/cancel-order', { ...base, symbol: entry.symbol, clientOid: entry.id }),
     close: (entry, quantity) => request('POST', 'order/place-order', { ...base, symbol: entry.symbol, marginMode: 'isolated',
       size: String(quantity), side: entry.side === 'long' ? 'sell' : 'buy', orderType: 'market',

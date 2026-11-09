@@ -55,6 +55,7 @@ def main():
         "COPY packages/exchanges/terminal-trading-store.mjs /app/packages/exchanges/terminal-trading-store.mjs\n"
         "COPY packages/exchanges/terminal-bitget.mjs /app/packages/exchanges/terminal-bitget.mjs\n"
         "COPY packages/exchanges/terminal-execution.mjs /app/packages/exchanges/terminal-execution.mjs\n"
+        "COPY packages/exchanges/terminal-manual.mjs /app/packages/exchanges/terminal-manual.mjs\n"
         "COPY packages/exchanges/terminal-trader.mjs /app/packages/exchanges/terminal-trader.mjs\n"
         "COPY packages/exchanges/terminal-bitget-v3.mjs /app/packages/exchanges/terminal-bitget-v3.mjs\n"
         "COPY packages/exchanges/terminal-exchange-router.mjs /app/packages/exchanges/terminal-exchange-router.mjs\n"

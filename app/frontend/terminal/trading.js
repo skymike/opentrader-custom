@@ -1,7 +1,24 @@
 export function createTradingPanel(getAuthorization, onConnections = () => {}) {
   const el = (id) => document.getElementById(id);
   let state, busy = false, generation = 0, dirty = false, connectionInitialized = false;
-  const fields = ['environment', 'mode', 'maxNotional', 'riskPct', 'dailyLossPct'];
+  let selectedPair = 'BTCUSDT', showAllPairs = false;
+  const pairScope = document.createElement('button');
+  pairScope.type = 'button';
+  pairScope.className = 'secondary position-pair-scope';
+  pairScope.hidden = true;
+  const positionsHeading = el('trade-position-count').parentElement;
+  const positionsHeader = document.createElement('div');
+  positionsHeader.className = 'managed-positions-header';
+  positionsHeading.before(positionsHeader);
+  positionsHeader.append(positionsHeading, pairScope);
+  pairScope.addEventListener('click', () => { showAllPairs = !showAllPairs; renderEntries(); });
+  document.addEventListener('terminal-market-select', ({ detail }) => {
+    if (!detail?.symbol) return;
+    selectedPair = detail.symbol;
+    renderEntries();
+  });
+  const defaults = { maxConcurrent: 1, leverage: 1, orderType: 'limit', stopLossPct: 2, takeProfitPct: 4, direction: 'both' };
+  const fields = ['environment', 'mode', 'maxNotional', 'riskPct', 'dailyLossPct', 'maxConcurrent', 'leverage', 'orderType', 'stopLossPct', 'takeProfitPct', 'direction'];
   const status = (message) => { el('trading-status').textContent = message; };
   async function api(path = '', method = 'GET', body) {
     const auth = getAuthorization(), version = generation;
@@ -31,14 +48,14 @@ export function createTradingPanel(getAuthorization, onConnections = () => {}) {
       connectionInitialized = true;
     }
     el('trading-fields').disabled = false;
-    if (!dirty) for (const key of fields) el('trade-' + key).value = settings[key];
+    if (!dirty) for (const key of fields) el('trade-' + key).value = settings[key] ?? defaults[key] ?? '';
     el('trading-badge').textContent = `${settings.environment.toUpperCase()} · ${settings.mode === 'automatic' ? 'Automatic' : 'Approval'} · ${settings.armed ? 'Entries enabled' : 'Entries stopped'}`;
     el('trading-badge').classList.toggle('live-trading', settings.environment === 'live');
     el('trade-arm').textContent = settings.armed ? 'Stop new entries' : `Enable ${settings.environment} entries`;
     el('trade-arm').classList.toggle('stop-entries', settings.armed);
     el('trade-arm').disabled = dirty && !settings.armed;
     el('trade-unsaved').hidden = !dirty;
-    el('trade-limits').textContent = `${settings.riskPct}% risk · 2% SL / 4% TP`;
+    el('trade-limits').textContent = `${settings.leverage ?? 1}× · ${settings.orderType ?? 'limit'} · ${settings.stopLossPct ?? 2}% SL / ${settings.takeProfitPct ?? 4}% TP`;
     el('trade-risk-summary').textContent = `${settings.riskPct}% equity · ${settings.dailyLossPct}% daily loss limit`;
     el('demo-test-order').disabled = settings.environment !== 'demo' || !settings.armed || stale;
     status((stale ? 'Worker not reporting fresh status. ' : '') + (journal.message ?? 'Waiting for execution worker.'));
@@ -57,12 +74,26 @@ export function createTradingPanel(getAuthorization, onConnections = () => {}) {
         button('Reject', () => command({ action: 'reject', proposalId: proposal.id }), disabled));
       return card;
     }));
+    renderEntries();
+    el('trade-reset').hidden = !journal.halted[settings.environment];
+    el('trade-halt').hidden = !journal.halted[settings.environment];
+    el('trade-halt').textContent = journal.halted[settings.environment] ? 'Safety halt · ' + journal.halted[settings.environment] : '';
+  }
+  function renderEntries() {
+    if (!state) { pairScope.hidden = true; return; }
+    const { journal } = state;
     const active = entry => !['closed', 'unfilled', 'rejected'].includes(entry.status);
-    const openEntries = journal.entries.filter(active);
-    const closedEntries = [...journal.entries].reverse().filter(entry => !active(entry)).slice(0,20);
+    const pair = selectedPair.replace(/USDT$/, '/USDT');
+    const matches = entry => showAllPairs || entry.symbol === selectedPair;
+    pairScope.hidden = false;
+    pairScope.textContent = showAllPairs ? 'All pairs' : pair;
+    pairScope.title = showAllPairs ? 'Show ' + pair + ' only' : 'Show all pairs';
+    pairScope.setAttribute('aria-label', pairScope.textContent + '. ' + pairScope.title);
+    const openEntries = journal.entries.filter(entry => active(entry) && matches(entry));
+    const closedEntries = [...journal.entries].reverse().filter(entry => !active(entry) && matches(entry)).slice(0,20);
     el('trade-position-count').textContent = openEntries.length;
     el('trade-orders-empty').hidden = !!openEntries.length;
-    el('trade-history-count').textContent = `${closedEntries.length} recent results`;
+    el('trade-history-count').textContent = `${closedEntries.length} recent results · ${showAllPairs ? 'All pairs' : pair}`;
     function entryRow(entry) {
       const row = document.createElement('section');
       const text = document.createElement('p'); text.textContent = `${entry.environment.toUpperCase()} · ${entry.symbol} ${entry.side ?? ''} · ${entry.status} · Filled ${entry.filled ?? 0} / ${entry.quantity ?? 0}${entry.message ? ' · ' + entry.message : ''}`;
@@ -75,9 +106,6 @@ export function createTradingPanel(getAuthorization, onConnections = () => {}) {
     el('trade-orders').replaceChildren(...openEntries.map(entryRow));
     el('trade-history').replaceChildren(...closedEntries.map(entryRow));
     if (!closedEntries.length) el('trade-history').textContent = 'No completed trades yet.';
-    el('trade-reset').hidden = !journal.halted[settings.environment];
-    el('trade-halt').hidden = !journal.halted[settings.environment];
-    el('trade-halt').textContent = journal.halted[settings.environment] ? 'Safety halt · ' + journal.halted[settings.environment] : '';
   }
   async function refresh() {
     if (!getAuthorization() || busy) return;
@@ -97,7 +125,7 @@ export function createTradingPanel(getAuthorization, onConnections = () => {}) {
       if (acknowledgement !== 'ENABLE LIVE TRADING') return;
     }
     const payload = { ...state.settings, armed, liveAcknowledgement: acknowledgement };
-    if (!stopOnly) for (const key of fields) payload[key] = ['environment', 'mode'].includes(key) ? el('trade-' + key).value : Number(el('trade-' + key).value);
+    if (!stopOnly) for (const key of fields) payload[key] = ['environment', 'mode', 'orderType', 'direction'].includes(key) ? el('trade-' + key).value : Number(el('trade-' + key).value);
     try { state = await api('', 'PUT', payload); if (!stopOnly) dirty = false; render(); }
     catch (error) { status(error.message); }
   }
@@ -134,6 +162,8 @@ export function createTradingPanel(getAuthorization, onConnections = () => {}) {
   function clear() {
     document.dispatchEvent(new CustomEvent('terminal-trading', { detail: null }));
     generation++; state = undefined; dirty = false; connectionInitialized = false;
+    pairScope.hidden = true;
+    showAllPairs = false;
     el('trading-fields').disabled = true;
     el('trading-form').reset(); el('trading-connection-form').reset();
     el('trade-proposals').replaceChildren(); el('trade-orders').replaceChildren();

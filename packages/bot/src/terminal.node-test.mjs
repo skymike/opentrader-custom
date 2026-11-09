@@ -46,6 +46,11 @@ test("commentary is authenticated, cached and immediately hidden on pause or acc
     assert.equal((await app.inject({ url, headers })).json().status, "disabled");
     assert.equal((await app.inject({url,method:'PUT',headers,payload:{enabled:true,requestAnalysis:true}})).statusCode,200);
     assert.equal((await app.inject({url,method:'PUT',headers,payload:{enabled:true,requestAnalysis:true}})).statusCode,429);
+    for (const symbol of ["SOL/USDT", "XRP/USDT"]) {
+      const followed = await app.inject({ url, method: "PUT", headers, payload: { followSelection: true, symbol } });
+      assert.equal(followed.statusCode, 200);
+      assert.equal((await app.inject({ url, headers })).json().selectedSymbol, symbol);
+    }
     await writeFile(join(directory, "settings.json"), "{malformed");
     assert.equal((await app.inject({ url, headers })).json().enabled, false);
   } finally {

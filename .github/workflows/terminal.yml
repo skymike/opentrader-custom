@@ -20,7 +20,7 @@ jobs:
       - run: pnpm install --lockfile --frozen-lockfile
       - run: pnpm --filter @opentrader/prisma exec prisma generate --schema src/schema.prisma
       - name: Test terminal and read-only account boundary
-        run: node --experimental-strip-types --test packages/bot/src/terminal.node-test.mjs packages/bot/src/terminal-connections.node-test.mjs packages/bot/src/terminal-connection-check.node-test.mjs packages/bot/src/terminal-trading.node-test.mjs packages/bot/src/terminal-original.node-test.mjs packages/exchanges/classic-monitor.node-test.mjs packages/exchanges/classic-agents.node-test.mjs packages/exchanges/terminal-assistant.node-test.mjs packages/exchanges/terminal-trading.node-test.mjs packages/exchanges/terminal-v3.node-test.mjs
+        run: node --experimental-strip-types --test packages/bot/src/terminal.node-test.mjs packages/bot/src/terminal-connections.node-test.mjs packages/bot/src/terminal-connection-check.node-test.mjs packages/bot/src/terminal-trading.node-test.mjs packages/bot/src/terminal-original.node-test.mjs packages/exchanges/classic-monitor.node-test.mjs packages/exchanges/classic-agents.node-test.mjs packages/exchanges/terminal-assistant.node-test.mjs packages/exchanges/terminal-trading.node-test.mjs packages/exchanges/terminal-v3.node-test.mjs packages/exchanges/terminal-manual.node-test.mjs
       - name: Build OpenTrader
         run: pnpm --filter opentrader exec tsup
       - name: Test bounded multi-market scanning and settings
@@ -40,7 +40,7 @@ jobs:
           cp packages/exchanges/classic-agents.mjs release/packages/exchanges/
           cp packages/exchanges/terminal-assistant.mjs release/packages/exchanges/
           cp packages/exchanges/terminal-trading-store.mjs packages/exchanges/terminal-bitget.mjs packages/exchanges/terminal-execution.mjs packages/exchanges/terminal-trader.mjs release/packages/exchanges/
-          cp packages/exchanges/terminal-bitget-v3.mjs packages/exchanges/terminal-exchange-router.mjs release/packages/exchanges/
+          cp packages/exchanges/terminal-manual.mjs packages/exchanges/terminal-bitget-v3.mjs packages/exchanges/terminal-exchange-router.mjs release/packages/exchanges/
           cp packages/exchanges/terminal-candles.mjs packages/exchanges/terminal-markets.mjs packages/exchanges/terminal-market-feed.mjs release/packages/exchanges/
           printf '%s\n' "$GITHUB_SHA" > release/COMMIT
           tar -czf terminal-release.tar.gz -C release .

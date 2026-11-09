@@ -3,7 +3,7 @@ import { validatePositions } from './terminal-bitget.mjs';
 const category = 'USDT-FUTURES';
 const routes = { GET: new Set(['account/assets', 'account/settings', 'position/current-position', 'trade/order-info',
   'trade/unfilled-orders', 'trade/unfilled-strategy-orders', 'market/instruments', 'market/tickers']),
-  POST: new Set(['trade/place-order', 'trade/cancel-order', 'trade/cancel-strategy-order']) };
+  POST: new Set(['account/set-leverage', 'trade/place-order', 'trade/cancel-order', 'trade/cancel-strategy-order']) };
 const list = (data) => { if (!Array.isArray(data)) throw new Error('Malformed Unified response'); return data; };
 export function normalizeUnifiedPositions(data) {
   return validatePositions(list(data?.list === null ? [] : data?.list).map((row) => ({ ...row, holdSide: row.posSide,
@@ -71,9 +71,11 @@ export function createBitgetV3(environment, credentials, fetcher = fetch, clock 
       const row = await request('GET', 'trade/order-info', { category, symbol: entry.symbol, clientOid: closing ? entry.closeId : entry.id });
       return { ...row, state: ({ cancelled: 'canceled', new: 'live' })[row.orderStatus] ?? row.orderStatus, baseVolume: row.cumExecQty, priceAvg: row.avgPrice };
     },
+    setLeverage: (entry) => request('POST', 'account/set-leverage', { category, symbol: entry.symbol, leverage: String(entry.leverage ?? 1), marginMode: 'isolated', posSide: entry.side }),
     submit: (entry) => request('POST', 'trade/place-order', { category, symbol: entry.symbol, marginMode: 'isolated',
-      qty: String(entry.quantity), price: String(entry.limit), side: entry.side === 'long' ? 'buy' : 'sell', orderType: 'limit', timeInForce: 'ioc', clientOid: entry.id,
-      reduceOnly: 'no', stopLoss: String(entry.stop), takeProfit: String(entry.target), slOrderType: 'market', tpOrderType: 'market', slTriggerBy: 'market', tpTriggerBy: 'market' }),
+      qty: String(entry.quantity), ...(entry.orderType !== 'market' ? { price: String(entry.limit), timeInForce: entry.timeInForce ?? 'ioc' } : {}),
+      side: (entry.side === 'long') !== (entry.action === 'close') ? 'buy' : 'sell', orderType: entry.orderType ?? 'limit', clientOid: entry.id,
+      reduceOnly: entry.action === 'close' ? 'yes' : 'no', ...(entry.action === 'close' ? {} : { stopLoss: String(entry.stop), takeProfit: String(entry.target), slOrderType: 'market', tpOrderType: 'market', slTriggerBy: 'market', tpTriggerBy: 'market' }) }),
     cancel: (entry) => request('POST', 'trade/cancel-order', { category, symbol: entry.symbol, clientOid: entry.id }),
     close: (entry, quantity) => request('POST', 'trade/place-order', { category, symbol: entry.symbol, marginMode: 'isolated', qty: String(quantity),
       side: entry.side === 'long' ? 'sell' : 'buy', orderType: 'market', clientOid: entry.closeId, reduceOnly: 'yes' }),
